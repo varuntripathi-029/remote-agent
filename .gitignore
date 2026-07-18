@@ -20,10 +20,7 @@ ENV/
 # devagent local config (machine-specific paths/device_id)
 devagent/projects.json
 
-# demo-site is its OWN independent git repo (the devagent's live test
-# target), not a submodule of this one — nesting its .git under this repo
-# would make git track it as a broken gitlink. Keep it out entirely.
-/demo-site/
+# demo-site is the devagent's live test target
 
 # Node
 node_modules/
