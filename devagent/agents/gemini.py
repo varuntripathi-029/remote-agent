@@ -15,7 +15,10 @@ class GeminiAgent(BaseAgent):
             or shutil.which("agy")
             or shutil.which("agy.cmd")
             or shutil.which("agy.exe")
+            or shutil.which(r"C:\Users\Asus\.gemini\antigravity-ide\bin\agentapi.bat")
+            or shutil.which("agentapi.bat")
         )
+
         if executable is None:
             raise FileNotFoundError("'gemini' or 'agy' CLI not found on PATH")
 
