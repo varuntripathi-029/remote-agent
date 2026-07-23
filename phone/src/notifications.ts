@@ -1,21 +1,30 @@
-import * as Notifications from "expo-notifications";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 
 /**
- * TODO(push): this only requests local-notification permission as a stub —
- * it does not register a push token or send anything to the backend. Real
- * push (getExpoPushTokenAsync, persisting the token server-side, and having
- * a task.result/approval.request trigger a notification for a backgrounded
- * phone) is a later hardening-phase item per aim.md's build order. Note
- * Expo Go's own support for remote push is limited on recent SDKs (local
- * notifications still work); this stub deliberately stays local-only.
+ * Stub notification permission requester.
+ * Note: expo-notifications native module was removed from Expo Go in SDK 53+.
+ * This function safely performs a no-op in Expo Go and only attempts permission
+ * requests in standalone/development builds.
  */
 export async function registerForNotificationsStub(): Promise<void> {
+  // Expo Go execution environment check
+  const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+  if (isExpoGo) {
+    console.log("[notifications] Stub skipped: running inside Expo Go client.");
+    return;
+  }
+
   try {
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== "granted") {
-      console.log("[notifications] permission not granted (stub, no-op)");
+    const Notifications = require("expo-notifications");
+    if (Notifications?.requestPermissionsAsync) {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== "granted") {
+        console.log("[notifications] permission not granted");
+      }
     }
   } catch (err) {
-    console.warn("[notifications] stub registration failed", err);
+    console.warn("[notifications] stub registration skipped", err);
   }
 }
+
+
