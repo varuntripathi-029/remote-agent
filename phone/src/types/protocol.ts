@@ -24,6 +24,10 @@ export interface TaskStartMessage {
   agent: string;
   project_id: string;
   prompt: string;
+  /** Echo back a prior task.result's session_id to continue that
+   * conversation (e.g. answering a clarifying question) instead of starting
+   * a fresh one. Adapter-specific and opaque; omit to start fresh. */
+  resume_session_id?: string;
 }
 
 export interface TaskRevertMessage {
@@ -93,6 +97,9 @@ export interface TaskResultMessage {
   checkpoint: string;
   files: string[];
   stat: { insertions: number; deletions: number };
+  /** Opaque id to replay as resume_session_id on a follow-up task.start for
+   * the same project; null if this agent adapter doesn't support resuming. */
+  session_id: string | null;
 }
 
 export interface ErrorMessage {

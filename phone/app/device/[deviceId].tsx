@@ -26,6 +26,8 @@ export default function DeviceScreen() {
   const selectAgent = useAppStore((s) => s.selectAgent);
   const setPrompt = useAppStore((s) => s.setPrompt);
   const startTask = useAppStore((s) => s.startTask);
+  const sessionIdByProject = useAppStore((s) => s.sessionIdByProject);
+  const startFresh = useAppStore((s) => s.startFresh);
 
   useEffect(() => {
     if (deviceId) selectDevice(deviceId);
@@ -89,6 +91,15 @@ export default function DeviceScreen() {
         ))
       )}
 
+      {selectedProjectId && sessionIdByProject[selectedProjectId] ? (
+        <View style={styles.continuingRow}>
+          <Text style={styles.continuingText}>Continuing previous conversation</Text>
+          <Pressable onPress={() => startFresh(selectedProjectId)}>
+            <Text style={styles.startFreshLink}>Start fresh</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <Text style={styles.label}>Prompt</Text>
       <TextInput
         style={styles.promptInput}
@@ -144,6 +155,14 @@ const styles = StyleSheet.create({
   projectRowActive: { borderColor: colors.accent },
   projectName: { color: colors.text, fontSize: 16, fontWeight: "500" },
   projectMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  continuingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 18,
+  },
+  continuingText: { color: colors.muted, fontSize: 12 },
+  startFreshLink: { color: colors.accent, fontSize: 12, fontWeight: "600" },
   promptInput: {
     backgroundColor: colors.surface,
     color: colors.text,

@@ -141,6 +141,7 @@ class Devagent:
         project_id = message.get("project_id")
         agent_name = message.get("agent")
         prompt = message.get("prompt")
+        resume_session_id = message.get("resume_session_id")
 
         if not task_id or not project_id or not agent_name or prompt is None:
             await self._send_error_log(ws, task_id, f"malformed task.start message: {message!r}")
@@ -168,9 +169,19 @@ class Devagent:
             return
 
         async with lock:
-            await self._run_task(ws, task_id, project.local_path, agent_cls(), prompt)
+            await self._run_task(
+                ws, task_id, project.local_path, agent_cls(), prompt, resume_session_id
+            )
 
-    async def _run_task(self, ws, task_id: str, project_path: Path, agent, prompt: str) -> None:
+    async def _run_task(
+        self,
+        ws,
+        task_id: str,
+        project_path: Path,
+        agent,
+        prompt: str,
+        resume_session_id: str | None = None,
+    ) -> None:
         try:
             checkpoint_sha = await git_safety.checkpoint(project_path, task_id)
         except git_safety.NotAGitRepoError as exc:
@@ -183,7 +194,7 @@ class Devagent:
         await self._send_log(ws, task_id, {"kind": "checkpoint", "checkpoint": checkpoint_sha})
 
         try:
-            argv = agent.build_command(prompt, project_path)
+            argv = agent.build_command(prompt, project_path, resume_session_id)
         except Exception as exc:
             await self._send_error_log(ws, task_id, f"failed to build agent command: {exc}")
             return
@@ -202,6 +213,7 @@ class Devagent:
             "checkpoint": checkpoint_sha,
             "files": summary.files,
             "stat": summary.stat,
+            "session_id": agent.session_id(),
         })
 
     async def _stream_process(

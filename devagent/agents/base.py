@@ -16,12 +16,20 @@ class BaseAgent(ABC):
     name: str
 
     @abstractmethod
-    def build_command(self, prompt: str, project_path: Path) -> list[str]:
+    def build_command(
+        self, prompt: str, project_path: Path, resume_session_id: str | None = None
+    ) -> list[str]:
         """Return the argv to exec for one task run.
 
         Always a list of args, never a shell string — main.py runs this via
         asyncio.create_subprocess_exec(*argv), so the prompt (arbitrary,
         remote-supplied text) can never break out into a shell command.
+
+        `resume_session_id` is the opaque id a previous call to `session_id()`
+        on an earlier task in the same conversation returned (see
+        docs/PROTOCOL.md's `task.start.resume_session_id` /
+        `task.result.session_id`). Adapters that can't continue a prior
+        conversation should just ignore it.
         """
 
     @abstractmethod
@@ -33,3 +41,15 @@ class BaseAgent(ABC):
         should become a fallback event (e.g. {"kind": "raw", "text": line}),
         not an exception that kills the streaming loop.
         """
+
+    def session_id(self) -> str | None:
+        """Return an opaque id identifying the conversation just run, so a
+        follow-up task.start can pass it back as `resume_session_id` to
+        continue it. Called once, after the process has exited.
+
+        A fresh agent instance is created per task (see main.py's
+        `_handle_task_start`), so implementations may stash whatever they
+        need on `self` during `build_command`/`parse_event` and read it back
+        here. Default: no resumption support.
+        """
+        return None

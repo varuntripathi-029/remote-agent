@@ -48,6 +48,12 @@ interface AppState {
   resultByTask: Record<string, TaskResultMessage>;
   pendingApprovalByTask: Record<string, ApprovalRequestMessage | undefined>;
   revertStatusByTask: Record<string, RevertStatus>;
+  // Reverse lookup so a task.result (only carries task_id) can be attributed
+  // back to the project it belongs to, even if activeTask has since moved on.
+  projectIdByTask: Record<string, string>;
+  // Last session_id per project_id, so a follow-up task.start for the same
+  // project continues that conversation by default (see docs/PROTOCOL.md).
+  sessionIdByProject: Record<string, string>;
 
   lastError: ErrorMessage | null;
 
@@ -61,6 +67,7 @@ interface AppState {
   setPrompt: (text: string) => void;
 
   startTask: () => string | null;
+  startFresh: (projectId: string) => void;
   respondApproval: (taskId: string, reqId: string, allow: boolean) => void;
   revertTask: (taskId: string) => void;
 
@@ -93,6 +100,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   resultByTask: {},
   pendingApprovalByTask: {},
   revertStatusByTask: {},
+  projectIdByTask: {},
+  sessionIdByProject: {},
 
   lastError: null,
 
@@ -141,12 +150,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPrompt: (text: string) => set({ prompt: text }),
 
   startTask: () => {
-    const { selectedDeviceId, selectedProjectId, selectedAgent, prompt } = get();
+    const { selectedDeviceId, selectedProjectId, selectedAgent, prompt, sessionIdByProject } =
+      get();
     if (!selectedDeviceId || !selectedProjectId || !prompt.trim()) {
       return null;
     }
 
     const taskId = generateId("task");
+    const resumeSessionId = sessionIdByProject[selectedProjectId];
     client?.send({
       type: "task.start",
       task_id: taskId,
@@ -154,6 +165,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       agent: selectedAgent,
       project_id: selectedProjectId,
       prompt: prompt.trim(),
+      ...(resumeSessionId ? { resume_session_id: resumeSessionId } : {}),
     });
 
     set((state) => ({
@@ -162,10 +174,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       resultByTask: omit(state.resultByTask, taskId),
       pendingApprovalByTask: omit(state.pendingApprovalByTask, taskId),
       revertStatusByTask: { ...state.revertStatusByTask, [taskId]: "idle" },
+      projectIdByTask: { ...state.projectIdByTask, [taskId]: selectedProjectId },
       prompt: "",
     }));
 
     return taskId;
+  },
+
+  // Forget the cached conversation for a project so the next startTask()
+  // begins a brand new one instead of continuing the last task's.
+  startFresh: (projectId: string) => {
+    set((state) => ({ sessionIdByProject: omit(state.sessionIdByProject, projectId) }));
   },
 
   respondApproval: (taskId: string, reqId: string, allow: boolean) => {
@@ -248,11 +267,17 @@ function handleIncoming(
       }));
       return;
 
-    case "task.result":
+    case "task.result": {
+      const projectId = get().projectIdByTask[message.task_id];
       set((state) => ({
         resultByTask: { ...state.resultByTask, [message.task_id]: message },
+        sessionIdByProject:
+          projectId && message.session_id
+            ? { ...state.sessionIdByProject, [projectId]: message.session_id }
+            : state.sessionIdByProject,
       }));
       return;
+    }
 
     case "error": {
       // Top-level backend errors (bad_message/device_offline) — a revert's
