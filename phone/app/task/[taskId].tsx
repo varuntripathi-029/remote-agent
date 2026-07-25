@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
 
 import { ErrorBanner } from "../../src/components/ErrorBanner";
 import { LogEntry, useAppStore } from "../../src/store/useAppStore";
@@ -14,7 +14,17 @@ export default function TaskScreen() {
   const revertStatus = useAppStore((s) => s.revertStatusByTask[taskId] ?? "idle");
   const respondApproval = useAppStore((s) => s.respondApproval);
   const revertTask = useAppStore((s) => s.revertTask);
+  const replyToTask = useAppStore((s) => s.replyToTask);
   const listRef = useRef<FlatList<LogEntry>>(null);
+  const [reply, setReply] = useState("");
+
+  const handleReply = () => {
+    const newTaskId = replyToTask(taskId, reply);
+    if (newTaskId) {
+      setReply("");
+      router.push(`/task/${newTaskId}`);
+    }
+  };
 
   useEffect(() => {
     if (logs.length > 0) {
@@ -93,6 +103,24 @@ export default function TaskScreen() {
                     : "Revert"}
             </Text>
           </Pressable>
+
+          <View style={styles.replyRow}>
+            <TextInput
+              style={styles.replyInput}
+              value={reply}
+              onChangeText={setReply}
+              placeholder="Reply to continue this conversation…"
+              placeholderTextColor={colors.muted}
+              multiline
+            />
+            <Pressable
+              style={[styles.replyButton, !reply.trim() && styles.disabled]}
+              disabled={!reply.trim()}
+              onPress={handleReply}
+            >
+              <Text style={styles.replyButtonText}>Send</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
     </View>
@@ -145,5 +173,25 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   revertButtonText: { color: "#fff", fontWeight: "600" },
+  replyRow: { flexDirection: "row", gap: 8, marginTop: 12, alignItems: "flex-end" },
+  replyInput: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    color: colors.text,
+    borderRadius: 10,
+    padding: 10,
+    maxHeight: 100,
+    textAlignVertical: "top",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  replyButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    justifyContent: "center",
+  },
+  replyButtonText: { color: "#fff", fontWeight: "600" },
   disabled: { opacity: 0.5 },
 });

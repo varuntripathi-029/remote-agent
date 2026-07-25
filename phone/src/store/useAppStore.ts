@@ -23,10 +23,10 @@ const DEFAULT_BACKEND_HOST = process.env.EXPO_PUBLIC_BACKEND_HOST || "192.168.1.
 export type LogEntry = { seq: number } & FormattedLog;
 export type RevertStatus = "idle" | "pending" | "done" | "error";
 
-interface ActiveTask {
-  taskId: string;
+interface TaskMeta {
   deviceId: string;
   projectId: string;
+  agent: string;
 }
 
 interface AppState {
@@ -43,14 +43,17 @@ interface AppState {
   selectedAgent: string;
   prompt: string;
 
-  activeTask: ActiveTask | null;
+  // Per-task device/project/agent, recorded for every task ever started (not
+  // just the latest one) so revertTask/replyToTask work on any task screen,
+  // not only the most recently started task.
+  taskMetaById: Record<string, TaskMeta>;
+  // The most recently started task_id — only used to attribute a top-level
+  // backend "error" (which carries no task_id) to a pending revert.
+  lastStartedTaskId: string | null;
   logsByTask: Record<string, LogEntry[]>;
   resultByTask: Record<string, TaskResultMessage>;
   pendingApprovalByTask: Record<string, ApprovalRequestMessage | undefined>;
   revertStatusByTask: Record<string, RevertStatus>;
-  // Reverse lookup so a task.result (only carries task_id) can be attributed
-  // back to the project it belongs to, even if activeTask has since moved on.
-  projectIdByTask: Record<string, string>;
   // Last session_id per project_id, so a follow-up task.start for the same
   // project continues that conversation by default (see docs/PROTOCOL.md).
   sessionIdByProject: Record<string, string>;
@@ -67,6 +70,7 @@ interface AppState {
   setPrompt: (text: string) => void;
 
   startTask: () => string | null;
+  replyToTask: (taskId: string, prompt: string) => string | null;
   startFresh: (projectId: string) => void;
   respondApproval: (taskId: string, reqId: string, allow: boolean) => void;
   revertTask: (taskId: string) => void;
@@ -95,12 +99,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedAgent: "claude",
   prompt: "",
 
-  activeTask: null,
+  taskMetaById: {},
+  lastStartedTaskId: null,
   logsByTask: {},
   resultByTask: {},
   pendingApprovalByTask: {},
   revertStatusByTask: {},
-  projectIdByTask: {},
   sessionIdByProject: {},
 
   lastError: null,
@@ -150,39 +154,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPrompt: (text: string) => set({ prompt: text }),
 
   startTask: () => {
-    const { selectedDeviceId, selectedProjectId, selectedAgent, prompt, sessionIdByProject } =
-      get();
+    const { selectedDeviceId, selectedProjectId, selectedAgent, prompt } = get();
     if (!selectedDeviceId || !selectedProjectId || !prompt.trim()) {
       return null;
     }
-
-    const taskId = generateId("task");
-    const resumeSessionId = sessionIdByProject[selectedProjectId];
-    client?.send({
-      type: "task.start",
-      task_id: taskId,
-      device_id: selectedDeviceId,
-      agent: selectedAgent,
-      project_id: selectedProjectId,
-      prompt: prompt.trim(),
-      ...(resumeSessionId ? { resume_session_id: resumeSessionId } : {}),
-    });
-
-    set((state) => ({
-      activeTask: { taskId, deviceId: selectedDeviceId, projectId: selectedProjectId },
-      logsByTask: { ...state.logsByTask, [taskId]: [] },
-      resultByTask: omit(state.resultByTask, taskId),
-      pendingApprovalByTask: omit(state.pendingApprovalByTask, taskId),
-      revertStatusByTask: { ...state.revertStatusByTask, [taskId]: "idle" },
-      projectIdByTask: { ...state.projectIdByTask, [taskId]: selectedProjectId },
-      prompt: "",
-    }));
-
+    const taskId = dispatchTask(
+      set,
+      get,
+      selectedDeviceId,
+      selectedProjectId,
+      selectedAgent,
+      prompt.trim(),
+    );
+    set({ prompt: "" });
     return taskId;
   },
 
-  // Forget the cached conversation for a project so the next startTask()
-  // begins a brand new one instead of continuing the last task's.
+  // Continue an existing task's conversation (e.g. answering a clarifying
+  // question) as a new task using the same device/project/agent — and,
+  // because sessionIdByProject still has that project's session_id cached,
+  // dispatchTask automatically resumes it instead of starting fresh.
+  replyToTask: (taskId: string, prompt: string) => {
+    const meta = get().taskMetaById[taskId];
+    const trimmed = prompt.trim();
+    if (!meta || !trimmed) return null;
+    return dispatchTask(set, get, meta.deviceId, meta.projectId, meta.agent, trimmed);
+  },
+
+  // Forget the cached conversation for a project so the next startTask()/
+  // replyToTask() begins a brand new one instead of continuing the last
+  // task's.
   startFresh: (projectId: string) => {
     set((state) => ({ sessionIdByProject: omit(state.sessionIdByProject, projectId) }));
   },
@@ -195,15 +196,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   revertTask: (taskId: string) => {
-    const { activeTask, resultByTask } = get();
+    const { taskMetaById, resultByTask } = get();
+    const meta = taskMetaById[taskId];
     const result = resultByTask[taskId];
-    if (!activeTask || activeTask.taskId !== taskId || !result) return;
+    if (!meta || !result) return;
 
     client?.send({
       type: "task.revert",
       task_id: taskId,
-      device_id: activeTask.deviceId,
-      project_id: activeTask.projectId,
+      device_id: meta.deviceId,
+      project_id: meta.projectId,
       checkpoint: result.checkpoint,
     });
     set((state) => ({
@@ -217,6 +219,41 @@ export const useAppStore = create<AppState>((set, get) => ({
 function omit<T extends Record<string, unknown>>(obj: T, key: string): T {
   const { [key]: _drop, ...rest } = obj;
   return rest as T;
+}
+
+// Shared by startTask/replyToTask: sends task.start (auto-attaching
+// resume_session_id when this project has a cached conversation) and seeds
+// this new task_id's bookkeeping.
+function dispatchTask(
+  set: (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void,
+  get: () => AppState,
+  deviceId: string,
+  projectId: string,
+  agent: string,
+  prompt: string,
+): string {
+  const taskId = generateId("task");
+  const resumeSessionId = get().sessionIdByProject[projectId];
+  client?.send({
+    type: "task.start",
+    task_id: taskId,
+    device_id: deviceId,
+    agent,
+    project_id: projectId,
+    prompt,
+    ...(resumeSessionId ? { resume_session_id: resumeSessionId } : {}),
+  });
+
+  set((state) => ({
+    taskMetaById: { ...state.taskMetaById, [taskId]: { deviceId, projectId, agent } },
+    lastStartedTaskId: taskId,
+    logsByTask: { ...state.logsByTask, [taskId]: [] },
+    resultByTask: omit(state.resultByTask, taskId),
+    pendingApprovalByTask: omit(state.pendingApprovalByTask, taskId),
+    revertStatusByTask: { ...state.revertStatusByTask, [taskId]: "idle" },
+  }));
+
+  return taskId;
 }
 
 function handleIncoming(
@@ -268,12 +305,12 @@ function handleIncoming(
       return;
 
     case "task.result": {
-      const projectId = get().projectIdByTask[message.task_id];
+      const meta = get().taskMetaById[message.task_id];
       set((state) => ({
         resultByTask: { ...state.resultByTask, [message.task_id]: message },
         sessionIdByProject:
-          projectId && message.session_id
-            ? { ...state.sessionIdByProject, [projectId]: message.session_id }
+          meta && message.session_id
+            ? { ...state.sessionIdByProject, [meta.projectId]: message.session_id }
             : state.sessionIdByProject,
       }));
       return;
@@ -283,10 +320,10 @@ function handleIncoming(
       // Top-level backend errors (bad_message/device_offline) — a revert's
       // own failure is a devagent-level "log" event instead, handled above.
       set({ lastError: message });
-      const { activeTask, revertStatusByTask } = get();
-      if (activeTask && revertStatusByTask[activeTask.taskId] === "pending") {
+      const { lastStartedTaskId, revertStatusByTask } = get();
+      if (lastStartedTaskId && revertStatusByTask[lastStartedTaskId] === "pending") {
         set((state) => ({
-          revertStatusByTask: { ...state.revertStatusByTask, [activeTask.taskId]: "error" },
+          revertStatusByTask: { ...state.revertStatusByTask, [lastStartedTaskId]: "error" },
         }));
       }
       return;
