@@ -12,6 +12,8 @@ import type {
   TaskResultMessage,
 } from "../types/protocol";
 
+export type ProjectRegistration = { status: "pending" } | { status: "error"; error: string };
+
 const PHONE_ID_KEY = "devagent.phoneId";
 const BACKEND_HOST_KEY = "devagent.backendHost";
 
@@ -50,13 +52,19 @@ interface AppState {
   // The most recently started task_id — only used to attribute a top-level
   // backend "error" (which carries no task_id) to a pending revert.
   lastStartedTaskId: string | null;
-  logsByTask: Record<string, LogEntry[]>;
+  // Keyed by project_id (not task_id) so the transcript — including the
+  // user's own messages — persists across a whole chat's turns/tasks; only
+  // startFresh() resets it.
+  logsByProject: Record<string, LogEntry[]>;
   resultByTask: Record<string, TaskResultMessage>;
   pendingApprovalByTask: Record<string, ApprovalRequestMessage | undefined>;
   revertStatusByTask: Record<string, RevertStatus>;
   // Last session_id per project_id, so a follow-up task.start for the same
   // project continues that conversation by default (see docs/PROTOCOL.md).
   sessionIdByProject: Record<string, string>;
+  // In-flight/failed project.register requests, keyed by req_id; a
+  // successful one is removed once merged into projectsByDevice.
+  projectRegistrationByReqId: Record<string, ProjectRegistration>;
 
   lastError: ErrorMessage | null;
 
@@ -66,6 +74,8 @@ interface AppState {
 
   selectDevice: (deviceId: string) => void;
   refreshProjects: (deviceId: string) => void;
+  registerProject: (deviceId: string, displayName: string, localPath: string) => string;
+  dismissProjectRegistration: (reqId: string) => void;
   selectAgent: (agent: string) => void;
   selectProject: (projectId: string) => void;
   setPrompt: (text: string) => void;
@@ -102,11 +112,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   taskMetaById: {},
   lastStartedTaskId: null,
-  logsByTask: {},
+  logsByProject: {},
   resultByTask: {},
   pendingApprovalByTask: {},
   revertStatusByTask: {},
   sessionIdByProject: {},
+  projectRegistrationByReqId: {},
 
   lastError: null,
 
@@ -151,10 +162,38 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Re-ask a device for its registered projects without resetting the
-  // current selection — used by the project drawer's Refresh action after
-  // the user registers a new one via manage_projects.py on the laptop.
+  // current selection.
   refreshProjects: (deviceId: string) => {
     client?.send({ type: "projects.list", device_id: deviceId });
+  },
+
+  // Register a new project directly from the phone (see docs/PROTOCOL.md's
+  // project.register) — devagent validates displayName/localPath (real
+  // directory, real git repo) before it's added to its allowlist, same as
+  // manage_projects.py. Returns the req_id so the caller can watch
+  // projectRegistrationByReqId for the outcome.
+  registerProject: (deviceId: string, displayName: string, localPath: string) => {
+    const reqId = generateId("reg");
+    client?.send({
+      type: "project.register",
+      req_id: reqId,
+      device_id: deviceId,
+      display_name: displayName,
+      local_path: localPath,
+    });
+    set((state) => ({
+      projectRegistrationByReqId: {
+        ...state.projectRegistrationByReqId,
+        [reqId]: { status: "pending" },
+      },
+    }));
+    return reqId;
+  },
+
+  dismissProjectRegistration: (reqId: string) => {
+    set((state) => ({
+      projectRegistrationByReqId: omit(state.projectRegistrationByReqId, reqId),
+    }));
   },
 
   selectAgent: (agent: string) => set({ selectedAgent: agent }),
@@ -189,11 +228,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     return dispatchTask(set, get, meta.deviceId, meta.projectId, meta.agent, trimmed);
   },
 
-  // Forget the cached conversation for a project so the next startTask()/
-  // replyToTask() begins a brand new one instead of continuing the last
-  // task's.
+  // Forget the cached conversation (and visible transcript) for a project so
+  // the next startTask()/replyToTask() begins a brand new one instead of
+  // continuing the last task's.
   startFresh: (projectId: string) => {
-    set((state) => ({ sessionIdByProject: omit(state.sessionIdByProject, projectId) }));
+    set((state) => ({
+      sessionIdByProject: omit(state.sessionIdByProject, projectId),
+      logsByProject: omit(state.logsByProject, projectId),
+    }));
   },
 
   respondApproval: (taskId: string, reqId: string, allow: boolean) => {
@@ -252,10 +294,15 @@ function dispatchTask(
     ...(resumeSessionId ? { resume_session_id: resumeSessionId } : {}),
   });
 
+  const userEntry: LogEntry = { seq: logSeq++, text: `› ${prompt}`, variant: "user" };
+
   set((state) => ({
     taskMetaById: { ...state.taskMetaById, [taskId]: { deviceId, projectId, agent } },
     lastStartedTaskId: taskId,
-    logsByTask: { ...state.logsByTask, [taskId]: [] },
+    logsByProject: {
+      ...state.logsByProject,
+      [projectId]: [...(state.logsByProject[projectId] ?? []), userEntry],
+    },
     resultByTask: omit(state.resultByTask, taskId),
     pendingApprovalByTask: omit(state.pendingApprovalByTask, taskId),
     revertStatusByTask: { ...state.revertStatusByTask, [taskId]: "idle" },
@@ -281,13 +328,16 @@ function handleIncoming(
       return;
 
     case "log": {
-      const entry: LogEntry = { seq: logSeq++, ...formatLog(message.data) };
-      set((state) => ({
-        logsByTask: {
-          ...state.logsByTask,
-          [message.task_id]: [...(state.logsByTask[message.task_id] ?? []), entry],
-        },
-      }));
+      const meta = get().taskMetaById[message.task_id];
+      if (meta) {
+        const entry: LogEntry = { seq: logSeq++, ...formatLog(message.data) };
+        set((state) => ({
+          logsByProject: {
+            ...state.logsByProject,
+            [meta.projectId]: [...(state.logsByProject[meta.projectId] ?? []), entry],
+          },
+        }));
+      }
 
       // A revert's outcome arrives as a devagent-level log event (see
       // devagent/main.py _handle_task_revert), not a distinct top-level
@@ -334,6 +384,28 @@ function handleIncoming(
           revertStatusByTask: { ...state.revertStatusByTask, [lastStartedTaskId]: "error" },
         }));
       }
+      return;
+    }
+
+    case "project.register.result": {
+      set((state) => ({
+        projectRegistrationByReqId: message.ok
+          ? omit(state.projectRegistrationByReqId, message.req_id)
+          : {
+              ...state.projectRegistrationByReqId,
+              [message.req_id]: { status: "error", error: message.error ?? "registration failed" },
+            },
+        projectsByDevice:
+          message.ok && message.project
+            ? {
+                ...state.projectsByDevice,
+                [message.device_id]: [
+                  ...(state.projectsByDevice[message.device_id] ?? []),
+                  message.project,
+                ],
+              }
+            : state.projectsByDevice,
+      }));
       return;
     }
   }

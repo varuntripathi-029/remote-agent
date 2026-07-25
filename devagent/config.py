@@ -17,10 +17,20 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "projects.json"
+
+
+class ProjectAlreadyRegisteredError(Exception):
+    def __init__(self, existing: "Project"):
+        self.existing = existing
+        super().__init__(
+            f"{existing.local_path} is already registered as {existing.display_name!r} "
+            f"(project_id={existing.project_id})"
+        )
 
 
 @dataclass
@@ -35,9 +45,44 @@ class Config:
     device_id: str
     backend_url: str
     projects: dict[str, Project]  # project_id -> Project
+    config_path: Path = field(default=DEFAULT_CONFIG_PATH)
 
     def resolve_project(self, project_id: str) -> Project | None:
         return self.projects.get(project_id)
+
+    def register_project(self, display_name: str, git_root: Path) -> Project:
+        """Add a new project to the registry and persist it to disk.
+
+        `git_root` must already be validated (exists, is a git repo, resolved
+        to the repo root) by the caller — same contract as
+        manage_projects.py's add_project, just reachable over the wire too
+        now (project.register in docs/PROTOCOL.md) instead of only the CLI.
+        """
+        for project in self.projects.values():
+            if project.local_path == git_root:
+                raise ProjectAlreadyRegisteredError(project)
+
+        project = Project(
+            project_id=str(uuid.uuid4()), display_name=display_name, local_path=git_root
+        )
+        self.projects[project.project_id] = project
+        self._persist()
+        return project
+
+    def _persist(self) -> None:
+        raw = {
+            "device_id": self.device_id,
+            "backend_url": self.backend_url,
+            "projects": [
+                {
+                    "project_id": p.project_id,
+                    "display_name": p.display_name,
+                    "local_path": str(p.local_path),
+                }
+                for p in self.projects.values()
+            ],
+        }
+        self.config_path.write_text(json.dumps(raw, indent=2) + "\n")
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -66,4 +111,5 @@ def load_config(path: Path | None = None) -> Config:
         device_id=raw["device_id"],
         backend_url=raw["backend_url"],
         projects=projects,
+        config_path=config_path,
     )

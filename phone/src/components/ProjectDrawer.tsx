@@ -1,5 +1,14 @@
-import { useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { useAppStore } from "../store/useAppStore";
 import { colors } from "../theme";
@@ -13,20 +22,46 @@ interface ProjectDrawerProps {
   onSelectProject: (projectId: string) => void;
 }
 
-/** Left-side sidebar for picking (or registering) a project on `deviceId`.
- * Registration itself stays laptop-only (see aim.md §5 — the backend must
- * never receive/store a local filesystem path), so "Add project" only shows
- * the CLI command to run there, plus a way to refresh once it's done. */
+/** Left-side sidebar for picking or registering a project on `deviceId`.
+ * Registration (see docs/PROTOCOL.md's project.register) runs the request
+ * straight from the phone — the devagent still validates the path (real
+ * directory, real git repo, resolved to the repo root) before adding it to
+ * its allowlist, same as manage_projects.py; only the trigger moved. */
 export function ProjectDrawer({ visible, onClose, deviceId, onSelectProject }: ProjectDrawerProps) {
   const projects = useAppStore((s) => s.projectsByDevice[deviceId]) ?? [];
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
-  const refreshProjects = useAppStore((s) => s.refreshProjects);
-  const [showAddInfo, setShowAddInfo] = useState(false);
+  const registerProject = useAppStore((s) => s.registerProject);
+  const dismissProjectRegistration = useAppStore((s) => s.dismissProjectRegistration);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [name, setName] = useState("");
+  const [path, setPath] = useState("");
+  const [reqId, setReqId] = useState<string | null>(null);
+  const registration = useAppStore((s) =>
+    reqId ? s.projectRegistrationByReqId[reqId] : undefined,
+  );
 
   const handleSelect = (projectId: string) => {
     onSelectProject(projectId);
     onClose();
   };
+
+  const handleRegister = () => {
+    if (!name.trim() || !path.trim()) return;
+    const id = registerProject(deviceId, name.trim(), path.trim());
+    setReqId(id);
+  };
+
+  // A successful registration removes its entry from
+  // projectRegistrationByReqId (see useAppStore) — once that happens, clear
+  // the form so the drawer is ready for the next one.
+  useEffect(() => {
+    if (reqId && registration === undefined) {
+      setName("");
+      setPath("");
+      setShowAddForm(false);
+      setReqId(null);
+    }
+  }, [reqId, registration]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -61,22 +96,58 @@ export function ProjectDrawer({ visible, onClose, deviceId, onSelectProject }: P
             )}
           </ScrollView>
 
-          <Pressable style={styles.addRow} onPress={() => setShowAddInfo((v) => !v)}>
-            <Text style={styles.addRowText}>{showAddInfo ? "▾" : "▸"} + Add project</Text>
+          <Pressable style={styles.addRow} onPress={() => setShowAddForm((v) => !v)}>
+            <Text style={styles.addRowText}>{showAddForm ? "▾" : "▸"} + Add project</Text>
           </Pressable>
 
-          {showAddInfo ? (
-            <View style={styles.addInfo}>
-              <Text style={styles.addInfoText}>
-                Projects are registered on the laptop, not the phone. In the devagent/ folder
-                there, run:
-              </Text>
-              <Text style={styles.code}>
-                python manage_projects.py add "&lt;name&gt;" "&lt;path&gt;"
-              </Text>
-              <Pressable style={styles.refreshButton} onPress={() => refreshProjects(deviceId)}>
-                <Text style={styles.refreshButtonText}>Refresh projects</Text>
+          {showAddForm ? (
+            <View style={styles.addForm}>
+              <Text style={styles.addFormLabel}>Name</Text>
+              <TextInput
+                style={styles.input}
+                value={name}
+                onChangeText={setName}
+                placeholder="my-repo"
+                placeholderTextColor={colors.muted}
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.addFormLabel}>Path (on the laptop, {deviceId})</Text>
+              <TextInput
+                style={styles.input}
+                value={path}
+                onChangeText={setPath}
+                placeholder={"C:\\Users\\me\\projects\\my-repo"}
+                placeholderTextColor={colors.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              {registration?.status === "error" ? (
+                <Text style={styles.registerError}>{registration.error}</Text>
+              ) : null}
+
+              <Pressable
+                style={[
+                  styles.registerButton,
+                  (!name.trim() || !path.trim() || registration?.status === "pending") &&
+                    styles.disabled,
+                ]}
+                disabled={!name.trim() || !path.trim() || registration?.status === "pending"}
+                onPress={handleRegister}
+              >
+                {registration?.status === "pending" ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.registerButtonText}>Register project</Text>
+                )}
               </Pressable>
+
+              {registration?.status === "error" ? (
+                <Pressable onPress={() => reqId && dismissProjectRegistration(reqId)}>
+                  <Text style={styles.dismissLink}>Dismiss</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -118,22 +189,32 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   addRowText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
-  addInfo: { paddingBottom: 24 },
-  addInfoText: { color: colors.muted, fontSize: 12, marginBottom: 8, lineHeight: 17 },
-  code: {
-    color: colors.text,
-    fontFamily: "monospace",
+  addForm: { paddingBottom: 24 },
+  addFormLabel: {
+    color: colors.muted,
     fontSize: 11,
-    backgroundColor: colors.bg,
-    borderRadius: 6,
-    padding: 8,
-    marginBottom: 10,
+    textTransform: "uppercase",
+    marginTop: 10,
+    marginBottom: 6,
   },
-  refreshButton: {
+  input: {
+    backgroundColor: colors.bg,
+    color: colors.text,
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 13,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  registerError: { color: colors.danger, fontSize: 12, marginTop: 10 },
+  registerButton: {
     backgroundColor: colors.accent,
     borderRadius: 8,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: "center",
+    marginTop: 14,
   },
-  refreshButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  registerButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  dismissLink: { color: colors.muted, fontSize: 12, textAlign: "center", marginTop: 8 },
+  disabled: { opacity: 0.5 },
 });

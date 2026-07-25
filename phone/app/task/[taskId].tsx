@@ -10,14 +10,14 @@ import { colors } from "../../src/theme";
 export default function TaskScreen() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>();
   const navigation = useNavigation();
-  const logs = useAppStore((s) => s.logsByTask[taskId] ?? []);
+  const meta = useAppStore((s) => s.taskMetaById[taskId]);
+  const logs = useAppStore((s) => (meta ? s.logsByProject[meta.projectId] : undefined) ?? []);
   const result = useAppStore((s) => s.resultByTask[taskId]);
   const approval = useAppStore((s) => s.pendingApprovalByTask[taskId]);
   const revertStatus = useAppStore((s) => s.revertStatusByTask[taskId] ?? "idle");
   const respondApproval = useAppStore((s) => s.respondApproval);
   const revertTask = useAppStore((s) => s.revertTask);
   const replyToTask = useAppStore((s) => s.replyToTask);
-  const meta = useAppStore((s) => s.taskMetaById[taskId]);
   const selectProject = useAppStore((s) => s.selectProject);
   const listRef = useRef<FlatList<LogEntry>>(null);
   const [reply, setReply] = useState("");
@@ -27,7 +27,10 @@ export default function TaskScreen() {
     const newTaskId = replyToTask(taskId, reply);
     if (newTaskId) {
       setReply("");
-      router.push(`/task/${newTaskId}`);
+      // replace (not push): this is the same ongoing chat, just a new turn —
+      // back should return straight to the device screen, not step through
+      // one screen per turn.
+      router.replace(`/task/${newTaskId}`);
     }
   };
 
@@ -176,6 +179,8 @@ function variantStyle(variant: LogEntry["variant"]) {
       return { color: colors.danger };
     case "muted":
       return { color: colors.muted };
+    case "user":
+      return { color: colors.accent, fontWeight: "700" as const };
     default:
       return { color: colors.text };
   }

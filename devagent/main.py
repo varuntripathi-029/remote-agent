@@ -19,7 +19,7 @@ from websockets.exceptions import ConnectionClosed
 
 import git_safety
 from agents import AGENTS
-from config import Config, load_config
+from config import Config, ProjectAlreadyRegisteredError, load_config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("devagent")
@@ -82,6 +82,8 @@ class Devagent:
         msg_type = message.get("type")
         if msg_type == "projects.list":
             await self._handle_projects_list(ws, message)
+        elif msg_type == "project.register":
+            await self._handle_project_register(ws, message)
         elif msg_type == "task.start":
             await self._handle_task_start(ws, message)
         elif msg_type == "task.revert":
@@ -134,6 +136,60 @@ class Devagent:
             "type": "projects",
             "device_id": self.config.device_id,
             "projects": projects_payload,
+        })
+
+    async def _handle_project_register(self, ws, message: dict) -> None:
+        # Per aim.md §5, project registration is the allowlist boundary: this
+        # runs the exact same validation manage_projects.py's CLI does (real
+        # directory, real git repo, resolved to the repo root) before ever
+        # adding anything a remote phone asked for to the registry.
+        req_id = message.get("req_id")
+        display_name = message.get("display_name")
+        local_path_str = message.get("local_path")
+
+        async def fail(error: str) -> None:
+            await self._send(ws, {
+                "type": "project.register.result",
+                "req_id": req_id,
+                "device_id": self.config.device_id,
+                "ok": False,
+                "error": error,
+            })
+
+        if not req_id or not display_name or not local_path_str:
+            await fail(f"malformed project.register message: {message!r}")
+            return
+
+        local_path = Path(local_path_str).resolve()
+        if not local_path.is_dir():
+            await fail(f"{local_path} is not a directory on this laptop")
+            return
+
+        if not await git_safety.is_git_repo(local_path):
+            await fail(f"{local_path} is not a git repository (run 'git init' there first)")
+            return
+
+        git_root = await git_safety.resolve_git_root(local_path)
+
+        try:
+            project = self.config.register_project(display_name, git_root)
+        except ProjectAlreadyRegisteredError as exc:
+            await fail(str(exc))
+            return
+
+        branch = await git_safety.current_branch(project.local_path)
+        commit = await git_safety.last_commit_hash(project.local_path)
+        await self._send(ws, {
+            "type": "project.register.result",
+            "req_id": req_id,
+            "device_id": self.config.device_id,
+            "ok": True,
+            "project": {
+                "project_id": project.project_id,
+                "display_name": project.display_name,
+                "current_branch": branch,
+                "last_commit_hash": commit,
+            },
         })
 
     async def _handle_task_start(self, ws, message: dict) -> None:

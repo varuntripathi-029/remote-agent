@@ -44,12 +44,24 @@ export interface ApprovalResponseMessage {
   allow: boolean;
 }
 
+export interface ProjectRegisterMessage {
+  type: "project.register";
+  req_id: string;
+  device_id: string;
+  display_name: string;
+  /** The one place a phone ever sends a laptop filesystem path — see
+   * docs/PROTOCOL.md's Project registration section for why that's allowed
+   * here despite the backend never storing/parsing local paths elsewhere. */
+  local_path: string;
+}
+
 export type PhoneOutgoingMessage =
   | RegisterPhoneMessage
   | ProjectsListMessage
   | TaskStartMessage
   | TaskRevertMessage
-  | ApprovalResponseMessage;
+  | ApprovalResponseMessage
+  | ProjectRegisterMessage;
 
 // ---- backend/agent -> phone --------------------------------------------
 
@@ -109,13 +121,23 @@ export interface ErrorMessage {
   device_id?: string;
 }
 
+export interface ProjectRegisterResultMessage {
+  type: "project.register.result";
+  req_id: string;
+  device_id: string;
+  ok: boolean;
+  project?: ProjectSummary;
+  error?: string;
+}
+
 export type PhoneIncomingMessage =
   | DevicesMessage
   | ProjectsMessage
   | LogMessage
   | ApprovalRequestMessage
   | TaskResultMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ProjectRegisterResultMessage;
 
 // Agents are a free-form string per PROTOCOL.md; this is only the set of
 // options the UI offers to pick from — adding one here does not require any
