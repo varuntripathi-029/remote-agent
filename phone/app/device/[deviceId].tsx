@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -8,15 +8,17 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 
 import { ErrorBanner } from "../../src/components/ErrorBanner";
+import { ProjectDrawer } from "../../src/components/ProjectDrawer";
 import { useAppStore } from "../../src/store/useAppStore";
 import { colors } from "../../src/theme";
 import { AGENT_OPTIONS } from "../../src/types/protocol";
 
 export default function DeviceScreen() {
   const { deviceId } = useLocalSearchParams<{ deviceId: string }>();
+  const navigation = useNavigation();
   const selectDevice = useAppStore((s) => s.selectDevice);
   const projectsByDevice = useAppStore((s) => s.projectsByDevice);
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
@@ -28,12 +30,34 @@ export default function DeviceScreen() {
   const startTask = useAppStore((s) => s.startTask);
   const sessionIdByProject = useAppStore((s) => s.sessionIdByProject);
   const startFresh = useAppStore((s) => s.startFresh);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (deviceId) selectDevice(deviceId);
   }, [deviceId, selectDevice]);
 
+  useLayoutEffect(() => {
+    // navigation.setOptions({ headerLeft }) replaces the native back button
+    // entirely, so re-render it alongside the hamburger rather than losing
+    // the way back to the Devices list.
+    navigation.setOptions({
+      headerLeft: () => (
+        <View style={styles.headerLeftRow}>
+          {navigation.canGoBack() ? (
+            <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
+              <Text style={styles.backArrow}>‹</Text>
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => setDrawerOpen(true)} hitSlop={12}>
+            <Text style={styles.hamburger}>☰</Text>
+          </Pressable>
+        </View>
+      ),
+    });
+  }, [navigation]);
+
   const projects = projectsByDevice[deviceId] ?? [];
+  const selectedProject = projects.find((p) => p.project_id === selectedProjectId);
 
   const handleStart = () => {
     const taskId = startTask();
@@ -45,6 +69,13 @@ export default function DeviceScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
       <ErrorBanner />
+
+      <ProjectDrawer
+        visible={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        deviceId={deviceId}
+        onSelectProject={selectProject}
+      />
 
       <Text style={styles.label}>Device</Text>
       <Text style={styles.deviceId}>{deviceId}</Text>
@@ -71,24 +102,23 @@ export default function DeviceScreen() {
           <Text style={styles.muted}>Loading projects…</Text>
         </View>
       ) : (
-        projects.map((project) => (
-          <Pressable
-            key={project.project_id}
-            style={[
-              styles.projectRow,
-              selectedProjectId === project.project_id && styles.projectRowActive,
-            ]}
-            onPress={() => selectProject(project.project_id)}
-          >
-            <Text style={styles.projectName}>{project.display_name}</Text>
-            {project.current_branch ? (
-              <Text style={styles.projectMeta}>
-                {project.current_branch}
-                {project.last_commit_hash ? ` · ${project.last_commit_hash.slice(0, 7)}` : ""}
-              </Text>
-            ) : null}
-          </Pressable>
-        ))
+        <Pressable style={styles.projectRow} onPress={() => setDrawerOpen(true)}>
+          {selectedProject ? (
+            <>
+              <Text style={styles.projectName}>{selectedProject.display_name}</Text>
+              {selectedProject.current_branch ? (
+                <Text style={styles.projectMeta}>
+                  {selectedProject.current_branch}
+                  {selectedProject.last_commit_hash
+                    ? ` · ${selectedProject.last_commit_hash.slice(0, 7)}`
+                    : ""}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.muted}>Tap ☰ or here to pick a project…</Text>
+          )}
+        </Pressable>
       )}
 
       {selectedProjectId && sessionIdByProject[selectedProjectId] ? (
@@ -131,6 +161,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   deviceId: { color: colors.text, fontSize: 18, fontWeight: "600" },
+  headerLeftRow: { flexDirection: "row", alignItems: "center", gap: 16, marginRight: 16 },
+  backArrow: { color: colors.text, fontSize: 28, marginTop: -2 },
+  hamburger: { color: colors.text, fontSize: 22 },
   chipRow: { flexDirection: "row", gap: 8 },
   chip: {
     borderWidth: 1,
@@ -152,7 +185,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  projectRowActive: { borderColor: colors.accent },
   projectName: { color: colors.text, fontSize: 16, fontWeight: "500" },
   projectMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
   continuingRow: {

@@ -65,6 +65,7 @@ interface AppState {
   setBackendHost: (host: string) => Promise<void>;
 
   selectDevice: (deviceId: string) => void;
+  refreshProjects: (deviceId: string) => void;
   selectAgent: (agent: string) => void;
   selectProject: (projectId: string) => void;
   setPrompt: (text: string) => void;
@@ -146,6 +147,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   selectDevice: (deviceId: string) => {
     set({ selectedDeviceId: deviceId, selectedProjectId: null });
+    client?.send({ type: "projects.list", device_id: deviceId });
+  },
+
+  // Re-ask a device for its registered projects without resetting the
+  // current selection — used by the project drawer's Refresh action after
+  // the user registers a new one via manage_projects.py on the laptop.
+  refreshProjects: (deviceId: string) => {
     client?.send({ type: "projects.list", device_id: deviceId });
   },
 

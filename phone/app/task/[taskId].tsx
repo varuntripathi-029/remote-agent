@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 
 import { ErrorBanner } from "../../src/components/ErrorBanner";
+import { ProjectDrawer } from "../../src/components/ProjectDrawer";
 import { LogEntry, useAppStore } from "../../src/store/useAppStore";
 import { colors } from "../../src/theme";
 
 export default function TaskScreen() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>();
+  const navigation = useNavigation();
   const logs = useAppStore((s) => s.logsByTask[taskId] ?? []);
   const result = useAppStore((s) => s.resultByTask[taskId]);
   const approval = useAppStore((s) => s.pendingApprovalByTask[taskId]);
@@ -15,8 +17,11 @@ export default function TaskScreen() {
   const respondApproval = useAppStore((s) => s.respondApproval);
   const revertTask = useAppStore((s) => s.revertTask);
   const replyToTask = useAppStore((s) => s.replyToTask);
+  const meta = useAppStore((s) => s.taskMetaById[taskId]);
+  const selectProject = useAppStore((s) => s.selectProject);
   const listRef = useRef<FlatList<LogEntry>>(null);
   const [reply, setReply] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const handleReply = () => {
     const newTaskId = replyToTask(taskId, reply);
@@ -26,15 +31,51 @@ export default function TaskScreen() {
     }
   };
 
+  // Picking a different project here means "start a new task there", since
+  // this screen is tied to the task that's already running/finished.
+  const handleSelectProject = (projectId: string) => {
+    selectProject(projectId);
+    if (meta) router.replace(`/device/${meta.deviceId}`);
+  };
+
   useEffect(() => {
     if (logs.length > 0) {
       listRef.current?.scrollToEnd({ animated: true });
     }
   }, [logs.length]);
 
+  useLayoutEffect(() => {
+    // navigation.setOptions({ headerLeft }) replaces the native back button
+    // entirely, so re-render it alongside the hamburger rather than losing
+    // the way back to the device screen.
+    navigation.setOptions({
+      headerLeft: () => (
+        <View style={styles.headerLeftRow}>
+          {navigation.canGoBack() ? (
+            <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
+              <Text style={styles.backArrow}>‹</Text>
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => setDrawerOpen(true)} hitSlop={12}>
+            <Text style={styles.hamburger}>☰</Text>
+          </Pressable>
+        </View>
+      ),
+    });
+  }, [navigation]);
+
   return (
     <View style={styles.container}>
       <ErrorBanner />
+
+      {meta ? (
+        <ProjectDrawer
+          visible={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          deviceId={meta.deviceId}
+          onSelectProject={handleSelectProject}
+        />
+      ) : null}
 
       <FlatList
         ref={listRef}
@@ -142,6 +183,9 @@ function variantStyle(variant: LogEntry["variant"]) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  headerLeftRow: { flexDirection: "row", alignItems: "center", gap: 16, marginRight: 16 },
+  backArrow: { color: colors.text, fontSize: 28, marginTop: -2 },
+  hamburger: { color: colors.text, fontSize: 22 },
   terminal: { flex: 1, backgroundColor: "#05080b" },
   terminalContent: { padding: 12 },
   logLine: { fontFamily: "monospace", fontSize: 12, marginBottom: 4 },
