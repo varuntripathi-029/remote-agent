@@ -391,12 +391,14 @@ class Devagent:
                 if not line:
                     continue
                 try:
-                    event = agent.parse_event(line)
+                    parsed = agent.parse_event(line)
                 except Exception:
                     logger.exception("task %s: adapter parse_event raised", task_id)
-                    event = {"kind": "raw", "text": line}
-                if event is not None:
-                    await self._send_log(ws, task_id, event)
+                    parsed = {"kind": "raw", "text": line}
+                events = parsed if isinstance(parsed, list) else [parsed]
+                for event in events:
+                    if event is not None:
+                        await self._send_log(ws, task_id, event)
 
         async def pump_stderr() -> None:
             assert proc.stderr is not None
