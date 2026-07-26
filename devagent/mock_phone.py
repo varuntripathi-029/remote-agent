@@ -77,10 +77,13 @@ async def main() -> None:
                 if isinstance(data, dict) and data.get("kind") == "checkpoint":
                     checkpoint = data.get("checkpoint")
             elif msg_type == "approval.request":
-                print(f"[approval.request] {message}")
-                # TODO(approval): once the approval seam in agents/claude.py
-                # lands, prompt for y/n here and send back:
-                #   {"type": "approval.response", "req_id": message["req_id"], "allow": ...}
+                print(f"\n[approval.request] {message['tool']}: {message['input']}")
+                answer = input("approve? [y/N]: ").strip().lower()
+                await ws.send(json.dumps({
+                    "type": "approval.response",
+                    "req_id": message["req_id"],
+                    "allow": answer == "y",
+                }))
             elif msg_type == "task.result":
                 print(f"\n[task.result] {message}")
                 checkpoint = message.get("checkpoint", checkpoint)
