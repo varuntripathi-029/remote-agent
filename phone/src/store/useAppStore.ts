@@ -58,6 +58,10 @@ interface AppState {
   // The most recently started task_id — only used to attribute a top-level
   // backend "error" (which carries no task_id) to a pending revert.
   lastStartedTaskId: string | null;
+  // Most recent task_id per project_id, so the device screen can reopen a
+  // project's ongoing chat (its /task/[taskId] screen) after the app
+  // restarts, instead of the transcript being persisted but unreachable.
+  lastTaskIdByProject: Record<string, string>;
   // Keyed by project_id (not task_id) so the transcript — including the
   // user's own messages — persists across a whole chat's turns/tasks; only
   // startFresh() resets it.
@@ -120,6 +124,7 @@ export const useAppStore = create<AppState>()(
 
   taskMetaById: {},
   lastStartedTaskId: null,
+  lastTaskIdByProject: {},
   logsByProject: {},
   resultByTask: {},
   pendingApprovalByTask: {},
@@ -243,6 +248,7 @@ export const useAppStore = create<AppState>()(
     set((state) => ({
       sessionIdByProject: omit(state.sessionIdByProject, projectId),
       logsByProject: omit(state.logsByProject, projectId),
+      lastTaskIdByProject: omit(state.lastTaskIdByProject, projectId),
     }));
   },
 
@@ -328,6 +334,7 @@ function dispatchTask(
   set((state) => ({
     taskMetaById: { ...state.taskMetaById, [taskId]: { deviceId, projectId, agent } },
     lastStartedTaskId: taskId,
+    lastTaskIdByProject: { ...state.lastTaskIdByProject, [projectId]: taskId },
     logsByProject: {
       ...state.logsByProject,
       [projectId]: [...(state.logsByProject[projectId] ?? []), userEntry],
