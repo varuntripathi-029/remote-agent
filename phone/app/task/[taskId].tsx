@@ -128,8 +128,8 @@ export default function TaskScreen() {
       {approval ? (
         <View style={styles.approvalBar}>
           <Text style={styles.approvalTitle}>Approve tool call: {approval.tool}</Text>
-          <Text style={styles.approvalInput} numberOfLines={3}>
-            {JSON.stringify(approval.input)}
+          <Text style={styles.approvalInput} numberOfLines={4}>
+            {formatApprovalInput(approval.input)}
           </Text>
           <View style={styles.approvalButtons}>
             <Pressable
