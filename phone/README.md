@@ -153,11 +153,12 @@ phase; Expo Go's own remote-push support is also limited on recent SDKs
 (local notifications still work), so this stub deliberately stays
 local-only for now.
 
-### Approval seam — already wired on the phone side
+### Approval seam
 
 `task/[taskId].tsx` renders the Approve/Deny bar and sends
 `{"type":"approval.response","req_id","allow"}` unconditionally whenever an
-`approval.request` arrives — this doesn't need to change when the devagent's
-side of the seam (see `devagent/agents/claude.py`'s `TODO(approval)`) is
-built; M0 just never triggers it because Claude Code runs with
-`--permission-mode acceptEdits`.
+`approval.request` arrives. The devagent side (a `PreToolUse` hook on `Bash`
+calls, relayed through a local approval bridge — see `devagent/README.md`'s
+"Approval bridge" section) now actually triggers this for shell commands
+that need a decision (`git push`, `npm run dev`, ...); routine file edits
+still auto-approve via `acceptEdits` and never reach this bar.
