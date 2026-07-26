@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -67,7 +69,12 @@ export default function DeviceScreen() {
   const canStart = Boolean(selectedProjectId) && prompt.trim().length > 0;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+    >
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
       <ErrorBanner />
 
       <ProjectDrawer
@@ -148,6 +155,7 @@ export default function DeviceScreen() {
         <Text style={styles.startButtonText}>Start Task</Text>
       </Pressable>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
