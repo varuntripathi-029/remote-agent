@@ -57,6 +57,15 @@ class GeminiAgent(BaseAgent):
             executable,
             "-p", prompt,
             "--log-file", str(self._log_path),
+            # Without this, agy/Antigravity has no active workspace in
+            # headless mode and silently falls back to its own default
+            # scratch dir (~/.gemini/antigravity-cli/scratch) instead of
+            # project_path — confirmed via `agy -p "print your workspace
+            # path"` with and without --add-dir. Unlike Claude Code, where
+            # --add-dir only *adds to* an implicit cwd-based workspace, this
+            # is load-bearing here: it's what sets the workspace at all.
+            "--add-dir", str(project_path),
+            "--mode", "accept-edits",
         ]
         if resume_session_id:
             # Unrecognized ids are silently ignored (a new conversation is
