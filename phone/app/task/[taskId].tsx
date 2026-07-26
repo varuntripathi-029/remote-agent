@@ -223,6 +223,10 @@ function variantStyle(variant: LogEntry["variant"]) {
       return { color: colors.muted };
     case "user":
       return { color: colors.accent, fontWeight: "700" as const };
+    case "assistant":
+      return { color: colors.assistant };
+    case "tool":
+      return { color: colors.tool };
     default:
       return { color: colors.text };
   }
