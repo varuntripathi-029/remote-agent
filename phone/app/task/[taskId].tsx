@@ -116,6 +116,14 @@ export default function TaskScreen() {
         />
       ) : null}
 
+      {meta ? (
+        <View style={styles.projectBar}>
+          <Text style={styles.projectBarText} numberOfLines={1}>
+            {project?.display_name ?? meta.projectId} · {meta.deviceId}
+          </Text>
+        </View>
+      ) : null}
+
       <FlatList
         ref={listRef}
         style={styles.terminal}
@@ -240,6 +248,14 @@ const styles = StyleSheet.create({
   headerLeftRow: { flexDirection: "row", alignItems: "center", gap: 16, marginRight: 16 },
   backArrow: { color: colors.text, fontSize: 28, marginTop: -2 },
   hamburger: { color: colors.text, fontSize: 22 },
+  projectBar: {
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  projectBarText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
   terminal: { flex: 1, backgroundColor: "#05080b" },
   terminalContent: { padding: 12 },
   logLine: { fontFamily: "monospace", fontSize: 12, marginBottom: 4 },
