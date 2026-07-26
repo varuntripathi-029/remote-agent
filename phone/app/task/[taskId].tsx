@@ -162,25 +162,6 @@ export default function TaskScreen() {
           ))}
           <Text style={styles.checkpoint}>checkpoint {result.checkpoint.slice(0, 12)}</Text>
 
-          <Pressable
-            style={[
-              styles.revertButton,
-              (revertStatus === "pending" || revertStatus === "done") && styles.disabled,
-            ]}
-            disabled={revertStatus === "pending" || revertStatus === "done"}
-            onPress={() => revertTask(taskId)}
-          >
-            <Text style={styles.revertButtonText}>
-              {revertStatus === "pending"
-                ? "Reverting…"
-                : revertStatus === "done"
-                  ? "Reverted"
-                  : revertStatus === "error"
-                    ? "Revert failed — retry"
-                    : "Revert"}
-            </Text>
-          </Pressable>
-
           <View style={styles.replyRow}>
             <TextInput
               style={styles.replyInput}
@@ -190,18 +171,46 @@ export default function TaskScreen() {
               placeholderTextColor={colors.muted}
               multiline
             />
-            <Pressable
-              style={[styles.replyButton, !reply.trim() && styles.disabled]}
-              disabled={!reply.trim()}
-              onPress={handleReply}
-            >
-              <Text style={styles.replyButtonText}>Send</Text>
-            </Pressable>
+            <View style={styles.sideButtons}>
+              <Pressable
+                style={[
+                  styles.revertButton,
+                  (revertStatus === "pending" || revertStatus === "done") && styles.disabled,
+                ]}
+                disabled={revertStatus === "pending" || revertStatus === "done"}
+                onPress={handleRevertPress}
+                hitSlop={4}
+              >
+                <Text style={styles.revertButtonText}>
+                  {revertStatus === "pending"
+                    ? "…"
+                    : revertStatus === "done"
+                      ? "✓"
+                      : revertStatus === "error"
+                        ? "retry"
+                        : "revert"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.replyButton, !reply.trim() && styles.disabled]}
+                disabled={!reply.trim()}
+                onPress={handleReply}
+              >
+                <Text style={styles.replyButtonText}>Send</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       ) : null}
-    </View>
+    </KeyboardAvoidingView>
   );
+}
+
+function formatApprovalInput(input: Record<string, unknown>): string {
+  // Bash calls are the common case — show the command directly instead of
+  // a JSON blob; fall back to compact JSON for anything else.
+  if (typeof input.command === "string") return input.command;
+  return JSON.stringify(input);
 }
 
 function variantStyle(variant: LogEntry["variant"]) {
