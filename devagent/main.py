@@ -348,8 +348,11 @@ class Devagent:
 
         await self._send_log(ws, task_id, {"kind": "checkpoint", "checkpoint": checkpoint_sha})
 
+        approval_endpoint = (
+            {"port": self._approver_port, "task_id": task_id} if self._approver_port else None
+        )
         try:
-            argv = agent.build_command(prompt, project_path, resume_session_id)
+            argv = agent.build_command(prompt, project_path, resume_session_id, approval_endpoint)
         except Exception as exc:
             await self._send_error_log(ws, task_id, f"failed to build agent command: {exc}")
             return
