@@ -68,12 +68,90 @@ class Devagent:
                     ))
                     logger.info("registered with backend as device_id=%s", self.config.device_id)
                     delay = RECONNECT_MIN_DELAY_S  # reset backoff after a clean connect
+                    self._ws = ws
                     await self._read_loop(ws)
             except (ConnectionClosed, OSError) as exc:
                 logger.warning("backend connection lost (%s); reconnecting in %ss", exc, delay)
+            finally:
+                self._ws = None
 
             await asyncio.sleep(delay)
             delay = min(delay * 2, RECONNECT_MAX_DELAY_S)
+
+    async def _start_approval_bridge(self) -> None:
+        """Loopback-only TCP server that lets a running CLI agent's own
+        permission mechanism (e.g. claude_approval_hook.py, run as a Claude
+        Code PreToolUse hook — see agents/claude.py) turn a pending tool call
+        into an approval.request/approval.response round trip with the
+        phone, without needing to share this asyncio event loop directly:
+        the hook runs as a separate OS process (a grandchild of this one, via
+        the `claude` subprocess), so a socket is the simplest thing that
+        works across that boundary."""
+        server = await asyncio.start_server(
+            self._handle_approver_conn, "127.0.0.1", 0
+        )
+        self._approver_server = server  # keep a reference so it isn't GC'd
+        self._approver_port = server.sockets[0].getsockname()[1]
+        logger.info("approval bridge listening on 127.0.0.1:%s", self._approver_port)
+
+    async def _handle_approver_conn(self, reader, writer) -> None:
+        req_id: str | None = None
+        try:
+            raw = await reader.readline()
+            if not raw:
+                return
+            try:
+                request = json.loads(raw.decode())
+            except (ValueError, TypeError):
+                await self._write_approver_response(writer, False, "malformed approval request")
+                return
+
+            task_id = request.get("task_id")
+            tool_name = str(request.get("tool_name", "tool"))
+            tool_input = request.get("tool_input") or {}
+
+            ws = self._ws
+            if ws is None:
+                await self._write_approver_response(
+                    writer, False, "devagent is not connected to the backend right now"
+                )
+                return
+
+            req_id = str(uuid.uuid4())
+            fut: asyncio.Future = asyncio.get_running_loop().create_future()
+            self._pending_approvals[req_id] = fut
+            await self._send(ws, {
+                "type": "approval.request",
+                "task_id": task_id,
+                "req_id": req_id,
+                "tool": tool_name,
+                "input": tool_input,
+            })
+
+            try:
+                allow = await asyncio.wait_for(fut, timeout=APPROVAL_TIMEOUT_S)
+                await self._write_approver_response(writer, bool(allow), None)
+            except asyncio.TimeoutError:
+                await self._write_approver_response(
+                    writer, False, "timed out waiting for approval from the phone"
+                )
+        except Exception:
+            logger.exception("approval bridge: request handling failed")
+            try:
+                await self._write_approver_response(writer, False, "internal devagent error")
+            except Exception:
+                pass
+        finally:
+            if req_id is not None:
+                self._pending_approvals.pop(req_id, None)
+            writer.close()
+
+    async def _write_approver_response(self, writer, allow: bool, reason: str | None) -> None:
+        response = {"allow": allow}
+        if reason:
+            response["reason"] = reason
+        writer.write((json.dumps(response) + "\n").encode())
+        await writer.drain()
 
     async def _read_loop(self, ws) -> None:
         async for raw in ws:
