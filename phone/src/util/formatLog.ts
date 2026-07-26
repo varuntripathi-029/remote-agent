@@ -1,4 +1,4 @@
-export type LogVariant = "info" | "success" | "error" | "muted" | "user";
+export type LogVariant = "info" | "success" | "error" | "muted" | "user" | "assistant" | "tool";
 
 export interface FormattedLog {
   text: string;
