@@ -22,6 +22,9 @@ export default function TaskScreen() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>();
   const navigation = useNavigation();
   const meta = useAppStore((s) => s.taskMetaById[taskId]);
+  const project = useAppStore((s) =>
+    meta ? s.projectsByDevice[meta.deviceId]?.find((p) => p.project_id === meta.projectId) : undefined,
+  );
   const logs = useAppStore((s) => (meta ? s.logsByProject[meta.projectId] : undefined) ?? []);
   const result = useAppStore((s) => s.resultByTask[taskId]);
   const approval = useAppStore((s) => s.pendingApprovalByTask[taskId]);
