@@ -47,19 +47,16 @@ class ClaudeCodeAgent(BaseAgent):
             "-p", prompt,
             "--output-format", "stream-json",
             "--verbose",
-            # TODO(approval): M0 auto-approves every tool call via
-            # acceptEdits. To route approvals to the phone instead, swap this
-            # for:
-            #   "--permission-mode", "plan",  # or drop this line
-            #   "--permission-prompt-tool", "mcp__approver__ask",
-            # ...and run a small local MCP server ("approver") that exposes an
-            # `ask` tool. main.py's task runner would implement it by sending
-            # {"type": "approval.request", "task_id", "req_id", "tool", "input"}
-            # up to the phone (see docs/PROTOCOL.md), awaiting the matching
-            # {"type": "approval.response", "req_id", "allow"}, and returning
-            # allow/deny to Claude Code over the MCP stdio transport. No
-            # change to this adapter's parse_event or to the protocol is
-            # needed when that lands.
+            # acceptEdits auto-approves the Edit/Write/NotebookEdit tools, so
+            # routine file edits never round-trip to the phone. It would also
+            # auto-approve some filesystem ops issued *through* Bash (mkdir,
+            # rm, mv, cp, sed) — but the PreToolUse hook below runs before
+            # permission-mode is even consulted (hooks are step 1 of Claude
+            # Code's evaluation order) and, when wired in, decides every Bash
+            # call itself, superseding that fast path. In other words: with
+            # approval routing on, *every* Bash call needs a phone tap, not
+            # just the risky ones — deliberately, since there's no reliable
+            # way to tell "safe" and "risky" Bash commands apart from here.
             "--permission-mode", "acceptEdits",
             "--add-dir", str(project_path),
         ]
