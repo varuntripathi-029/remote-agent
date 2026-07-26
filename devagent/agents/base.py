@@ -17,7 +17,11 @@ class BaseAgent(ABC):
 
     @abstractmethod
     def build_command(
-        self, prompt: str, project_path: Path, resume_session_id: str | None = None
+        self,
+        prompt: str,
+        project_path: Path,
+        resume_session_id: str | None = None,
+        approval_endpoint: dict | None = None,
     ) -> list[str]:
         """Return the argv to exec for one task run.
 
