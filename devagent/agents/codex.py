@@ -9,7 +9,11 @@ class CodexAgent(BaseAgent):
     name = "codex"
 
     def build_command(
-        self, prompt: str, project_path: Path, resume_session_id: str | None = None
+        self,
+        prompt: str,
+        project_path: Path,
+        resume_session_id: str | None = None,
+        approval_endpoint: dict | None = None,
     ) -> list[str]:
         executable = (
             shutil.which("codex")
