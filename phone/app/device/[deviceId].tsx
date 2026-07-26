@@ -32,6 +32,8 @@ export default function DeviceScreen() {
   const startTask = useAppStore((s) => s.startTask);
   const sessionIdByProject = useAppStore((s) => s.sessionIdByProject);
   const startFresh = useAppStore((s) => s.startFresh);
+  const logsByProject = useAppStore((s) => s.logsByProject);
+  const lastTaskIdByProject = useAppStore((s) => s.lastTaskIdByProject);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
@@ -128,9 +130,17 @@ export default function DeviceScreen() {
         </Pressable>
       )}
 
-      {selectedProjectId && sessionIdByProject[selectedProjectId] ? (
+      {selectedProjectId && logsByProject[selectedProjectId]?.length ? (
         <View style={styles.continuingRow}>
-          <Text style={styles.continuingText}>Continuing previous conversation</Text>
+          <Pressable
+            onPress={() => router.push(`/task/${lastTaskIdByProject[selectedProjectId]}`)}
+            disabled={!lastTaskIdByProject[selectedProjectId]}
+          >
+            <Text style={styles.continuingText}>
+              {sessionIdByProject[selectedProjectId] ? "Continuing previous conversation — " : ""}
+              <Text style={styles.startFreshLink}>View chat history</Text>
+            </Text>
+          </Pressable>
           <Pressable onPress={() => startFresh(selectedProjectId)}>
             <Text style={styles.startFreshLink}>Start fresh</Text>
           </Pressable>
