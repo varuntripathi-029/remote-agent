@@ -128,10 +128,17 @@ from.
   that project, rather than queuing or running concurrently.
 - **Reconnect with backoff**: if the backend connection drops, `main.py`
   reconnects with exponential backoff (1s → 30s cap) and re-registers.
-- **Approval seam (not built yet)**: M0 runs Claude Code with
-  `--permission-mode acceptEdits`, auto-approving every tool call. See the
-  `TODO(approval)` comment in `agents/claude.py` for exactly how this swaps
-  to `--permission-prompt-tool mcp__approver__ask` plus a small local MCP
-  server, turning each tool call into an `approval.request`/
-  `approval.response` round trip to the phone per `docs/PROTOCOL.md` —
-  without changing the adapter interface or the protocol.
+- **Approval bridge**: Claude Code runs with `--permission-mode acceptEdits`,
+  which covers file edits and safe filesystem ops (mkdir/rm/mv/cp/sed) so
+  routine edits never leave the laptop. Anything else needing a permission
+  decision — `Bash` calls like `git push` or `npm run dev` — is gated by a
+  `PreToolUse` hook (`agents/claude_approval_hook.py`), wired in per-run via
+  `--settings` in `agents/claude.py`'s `_build_approval_settings`. The hook
+  blocks and talks to `main.py`'s `_start_approval_bridge` (a loopback-only
+  TCP server) over a plain newline-JSON request/response, which turns it
+  into an `approval.request`/`approval.response` round trip with the phone
+  per `docs/PROTOCOL.md`, with a 280s timeout that denies automatically if
+  nobody answers. `BaseAgent.build_command`'s `approval_endpoint` param is
+  the generic seam other adapters can use the same way; codex.py/gemini.py
+  currently ignore it (unauthenticated, always-deny-if-unhandled by their
+  own CLI is out of scope here).
