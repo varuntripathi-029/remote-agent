@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from pathlib import Path
 
 import websockets
@@ -26,12 +27,27 @@ logger = logging.getLogger("devagent")
 
 RECONNECT_MIN_DELAY_S = 1
 RECONNECT_MAX_DELAY_S = 30
+# How long to wait for a phone to answer an approval.request before denying
+# it automatically — a bit under claude_approval_hook.py's own socket
+# timeout so we're the one who produces the (clearer) timeout reason.
+APPROVAL_TIMEOUT_S = 280
 
 
 class Devagent:
     def __init__(self, config: Config):
         self.config = config
         self._project_locks: dict[str, asyncio.Lock] = {}
+        # Set for the lifetime of the current backend connection (see run());
+        # None while disconnected/reconnecting. Read by _handle_approver_conn
+        # to know whether there's anywhere to send an approval.request.
+        self._ws = None
+        # Pending approval.request round trips, keyed by req_id — resolved by
+        # _handle_message when the matching approval.response arrives, or by
+        # _handle_approver_conn itself on timeout.
+        self._pending_approvals: dict[str, asyncio.Future] = {}
+        # Loopback port claude_approval_hook.py (or any future adapter's
+        # equivalent) connects to; set once by _start_approval_bridge().
+        self._approver_port: int | None = None
 
     def _lock_for(self, project_id: str) -> asyncio.Lock:
         if project_id not in self._project_locks:
@@ -41,6 +57,8 @@ class Devagent:
     async def run(self) -> None:
         """Connect, register, and process messages forever, reconnecting
         with exponential backoff if the backend connection drops."""
+        await self._start_approval_bridge()
+
         delay = RECONNECT_MIN_DELAY_S
         while True:
             try:
