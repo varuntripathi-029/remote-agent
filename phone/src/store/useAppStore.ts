@@ -145,6 +145,20 @@ export const useAppStore = create<AppState>()(
       await AsyncStorage.setItem(PHONE_ID_KEY, phoneId);
     }
 
+    // Chat history (logsByProject etc.) is loaded separately by the
+    // persist() middleware below (skipHydration: true up top, so it's
+    // triggered here rather than racing this hydrate()).
+    await useAppStore.persist.rehydrate();
+
+    // Restored log entries carry their own `seq`; keep the in-memory
+    // counter past the highest one so newly appended entries never collide
+    // with a restored key in FlatList's keyExtractor.
+    let maxSeq = -1;
+    for (const entries of Object.values(get().logsByProject)) {
+      for (const entry of entries) maxSeq = Math.max(maxSeq, entry.seq);
+    }
+    logSeq = maxSeq + 1;
+
     set({
       phoneId,
       backendHost: backendHost || DEFAULT_BACKEND_HOST,
