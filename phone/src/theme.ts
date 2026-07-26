@@ -8,4 +8,6 @@ export const colors = {
   success: "#3fb950",
   danger: "#f85149",
   warning: "#d29922",
+  assistant: "#7ee787",
+  tool: "#d29922",
 };
