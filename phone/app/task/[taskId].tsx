@@ -50,6 +50,19 @@ export default function TaskScreen() {
     }
   };
 
+  // Revert undoes a real git reset — confirm first since the button sits
+  // right next to Send now and a misclick would otherwise be one tap away.
+  const handleRevertPress = () => {
+    Alert.alert(
+      "Revert this task's changes?",
+      "This rolls the project back to the checkpoint taken before this task ran.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Revert", style: "destructive", onPress: () => revertTask(taskId) },
+      ],
+    );
+  };
+
   // Picking a different project here means "start a new task there", since
   // this screen is tied to the task that's already running/finished.
   const handleSelectProject = (projectId: string) => {
