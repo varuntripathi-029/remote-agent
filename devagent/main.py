@@ -185,12 +185,15 @@ class Devagent:
         elif msg_type == "task.revert":
             await self._handle_task_revert(ws, message)
         elif msg_type == "approval.response":
-            # TODO(approval): once the --permission-prompt-tool MCP seam
-            # described in agents/claude.py exists, route this to whatever is
-            # awaiting the matching req_id. Until then there is nothing
-            # waiting on approvals (M0 auto-approves via acceptEdits), so
-            # this is a documented no-op rather than an error.
-            logger.info("received approval.response (no-op in M0): %r", message)
+            req_id = message.get("req_id")
+            fut = self._pending_approvals.get(req_id)
+            if fut is None or fut.done():
+                # Already resolved (e.g. it timed out) or for a req_id we
+                # never issued/no longer track — not an error, just late or
+                # stale (a phone may retry a tap after a slow connection).
+                logger.info("approval.response for unknown/settled req_id=%r", req_id)
+            else:
+                fut.set_result(bool(message.get("allow")))
         else:
             logger.warning("unknown message type from backend: %r", msg_type)
 
