@@ -1,6 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorBanner } from "../../src/components/ErrorBanner";
 import { ProjectDrawer } from "../../src/components/ProjectDrawer";
@@ -22,6 +33,11 @@ export default function TaskScreen() {
   const listRef = useRef<FlatList<LogEntry>>(null);
   const [reply, setReply] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const insets = useSafeAreaInsets();
+  // Approximate native stack header height (44pt on iOS) on top of the
+  // safe-area inset, so "padding" behavior doesn't leave the reply row
+  // hidden under the header before it starts pushing content up.
+  const insetsTop = insets.top + 44;
 
   const handleReply = () => {
     const newTaskId = replyToTask(taskId, reply);
@@ -68,7 +84,11 @@ export default function TaskScreen() {
   }, [navigation]);
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insetsTop : 0}
+    >
       <ErrorBanner />
 
       {meta ? (
