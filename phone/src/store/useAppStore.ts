@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 import { formatLog, type FormattedLog } from "../util/formatLog";
 import { generateId } from "../util/id";
@@ -16,6 +17,11 @@ export type ProjectRegistration = { status: "pending" } | { status: "error"; err
 
 const PHONE_ID_KEY = "devagent.phoneId";
 const BACKEND_HOST_KEY = "devagent.backendHost";
+// Chat transcripts, session ids, and task results, persisted to the phone's
+// own local storage only — never sent to the backend or devagent, and never
+// synced to any cloud. See the persist() config below for exactly what's
+// saved (partialize).
+const CHAT_HISTORY_KEY = "devagent.chatHistory";
 
 // EXPO_PUBLIC_* env vars are inlined at build time by Expo (see .env.example).
 // Expo Go runs on the phone itself, so "localhost" here would mean the
@@ -96,7 +102,9 @@ function buildWsUrl(host: string): string {
   return `ws://${host}/ws/phone`;
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
   hydrated: false,
   phoneId: "",
   backendHost: DEFAULT_BACKEND_HOST,
@@ -264,7 +272,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   dismissError: () => set({ lastError: null }),
-}));
+    }),
+    {
+      name: CHAT_HISTORY_KEY,
+      storage: createJSONStorage(() => AsyncStorage),
+      // hydrate() above calls useAppStore.persist.rehydrate() explicitly so
+      // it can finish before `hydrated` flips true (see _layout.tsx, which
+      // gates connect() on that) — skip the middleware's own automatic
+      // rehydration-on-store-creation.
+      skipHydration: true,
+      // Only the chat itself is phone-local persisted state; connection
+      // status, drafts, and in-flight approval/revert UI state should
+      // always start fresh on app launch, not resume mid-flight.
+      partialize: (state) => ({
+        taskMetaById: state.taskMetaById,
+        lastTaskIdByProject: state.lastTaskIdByProject,
+        logsByProject: state.logsByProject,
+        resultByTask: state.resultByTask,
+        sessionIdByProject: state.sessionIdByProject,
+      }),
+    },
+  ),
+);
 
 function omit<T extends Record<string, unknown>>(obj: T, key: string): T {
   const { [key]: _drop, ...rest } = obj;
