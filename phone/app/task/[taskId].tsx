@@ -260,14 +260,6 @@ const styles = StyleSheet.create({
   deletions: { color: colors.danger },
   resultFile: { color: colors.muted, fontSize: 12, fontFamily: "monospace" },
   checkpoint: { color: colors.muted, fontSize: 11, marginTop: 8 },
-  revertButton: {
-    backgroundColor: colors.danger,
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginTop: 12,
-  },
-  revertButtonText: { color: "#fff", fontWeight: "600" },
   replyRow: { flexDirection: "row", gap: 8, marginTop: 12, alignItems: "flex-end" },
   replyInput: {
     flex: 1,
@@ -280,12 +272,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  // Stacked so Revert is the same size as Send and sits directly above it —
+  // small and out of the main tap path, instead of a full-width danger bar.
+  sideButtons: { width: 64, gap: 6 },
+  revertButton: {
+    backgroundColor: colors.danger,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  revertButtonText: { color: "#fff", fontWeight: "600", fontSize: 12 },
   replyButton: {
     backgroundColor: colors.accent,
     borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    justifyContent: "center",
+    paddingVertical: 10,
+    alignItems: "center",
   },
   replyButtonText: { color: "#fff", fontWeight: "600" },
   disabled: { opacity: 0.5 },
