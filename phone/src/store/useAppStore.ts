@@ -267,7 +267,10 @@ export const useAppStore = create<AppState>()(
   },
 
   respondApproval: (taskId: string, reqId: string, allow: boolean) => {
-    client?.send({ type: "approval.response", req_id: reqId, allow });
+    const meta = get().taskMetaById[taskId];
+    if (meta) {
+      client?.send({ type: "approval.response", device_id: meta.deviceId, req_id: reqId, allow });
+    }
     set((state) => ({
       pendingApprovalByTask: { ...state.pendingApprovalByTask, [taskId]: undefined },
     }));

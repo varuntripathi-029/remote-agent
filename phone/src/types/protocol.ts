@@ -40,6 +40,10 @@ export interface TaskRevertMessage {
 
 export interface ApprovalResponseMessage {
   type: "approval.response";
+  // Required so the backend (a dumb relay that routes every phone->agent
+  // message by device_id alone) knows which devagent to deliver this to —
+  // missing here was the actual bug behind every approval always timing out.
+  device_id: string;
   req_id: string;
   allow: boolean;
 }
