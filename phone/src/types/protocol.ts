@@ -10,6 +10,10 @@
 export interface RegisterPhoneMessage {
   type: "register";
   phone_id: string;
+  /** JWT from GitHub OAuth login (see backend/auth.py) — required; the
+   * backend rejects a register with a missing/invalid/expired token with
+   * {"type":"error","reason":"unauthorized",...} and closes the connection. */
+  token: string;
 }
 
 export interface ProjectsListMessage {

@@ -26,6 +26,7 @@ export class PhoneSocketClient {
   constructor(
     private url: string,
     private phoneId: string,
+    private token: string,
     private listeners: ClientListeners,
   ) {}
 
@@ -60,7 +61,7 @@ export class PhoneSocketClient {
     ws.onopen = () => {
       this.reconnectDelay = RECONNECT_MIN_DELAY_MS;
       this.listeners.onStatus("connected");
-      this.send({ type: "register", phone_id: this.phoneId });
+      this.send({ type: "register", phone_id: this.phoneId, token: this.token });
     };
 
     ws.onmessage = (event) => {
