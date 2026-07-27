@@ -37,6 +37,7 @@ export default function RootLayout() {
         <Stack.Screen name="device/[deviceId]" options={{ title: "New Task" }} />
         <Stack.Screen name="task/[taskId]" options={{ title: "Task" }} />
         <Stack.Screen name="settings" options={{ title: "Settings", presentation: "modal" }} />
+        <Stack.Screen name="help" options={{ title: "Setup Guide", presentation: "modal" }} />
       </Stack>
     </SafeAreaProvider>
   );
