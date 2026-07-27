@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 
 import { useAppStore } from "../src/store/useAppStore";
@@ -10,11 +10,26 @@ export default function SettingsScreen() {
   const setBackendHost = useAppStore((s) => s.setBackendHost);
   const status = useAppStore((s) => s.connectionStatus);
   const phoneId = useAppStore((s) => s.phoneId);
+  const logout = useAppStore((s) => s.logout);
   const [value, setValue] = useState(backendHost);
 
   const handleSave = async () => {
     await setBackendHost(value.trim());
     router.back();
+  };
+
+  const handleLogout = () => {
+    Alert.alert("Log out?", "You'll need to sign in with GitHub again.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: async () => {
+          await logout();
+          router.replace("/");
+        },
+      },
+    ]);
   };
 
   return (
@@ -45,6 +60,10 @@ export default function SettingsScreen() {
       <Pressable style={styles.button} onPress={handleSave}>
         <Text style={styles.buttonText}>Save & Reconnect</Text>
       </Pressable>
+
+      <Pressable style={styles.logoutButton} onPress={handleLogout}>
+        <Text style={styles.logoutButtonText}>Log out</Text>
+      </Pressable>
     </View>
   );
 }
@@ -72,4 +91,13 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  logoutButton: {
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  logoutButtonText: { color: colors.danger, fontSize: 16, fontWeight: "600" },
 });
