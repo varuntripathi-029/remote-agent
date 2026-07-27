@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -17,6 +18,11 @@ export type ProjectRegistration = { status: "pending" } | { status: "error"; err
 
 const PHONE_ID_KEY = "devagent.phoneId";
 const BACKEND_HOST_KEY = "devagent.backendHost";
+// expo-secure-store (Keychain/Keystore-backed), never AsyncStorage — see
+// aim.md §4 / the auth hardening prompt this shipped under: this is the one
+// thing on this phone that must not be recoverable by just reading a plain
+// file (SecureStore's Android backing is encrypted; AsyncStorage's isn't).
+const JWT_KEY = "devagent.jwt";
 // Chat transcripts, session ids, and task results, persisted to the phone's
 // own local storage only — never sent to the backend or devagent, and never
 // synced to any cloud. See the persist() config below for exactly what's
@@ -41,6 +47,11 @@ interface AppState {
   hydrated: boolean;
   phoneId: string;
   backendHost: string;
+  // null = logged out (or never logged in). Never persisted by the zustand
+  // persist() middleware below — see JWT_KEY's own storage via SecureStore
+  // in hydrate()/login()/logout() instead, which is a deliberately separate
+  // path from the AsyncStorage-backed chat-history persistence.
+  jwt: string | null;
   connectionStatus: ConnectionStatus;
 
   devices: string[];
@@ -81,6 +92,8 @@ interface AppState {
   hydrate: () => Promise<void>;
   connect: () => void;
   setBackendHost: (host: string) => Promise<void>;
+  login: (token: string) => Promise<void>;
+  logout: () => Promise<void>;
 
   selectDevice: (deviceId: string) => void;
   refreshProjects: (deviceId: string) => void;
@@ -106,12 +119,19 @@ function buildWsUrl(host: string): string {
   return `ws://${host}/ws/phone`;
 }
 
+/** Backend's plain-HTTP base URL, for the GitHub OAuth login redirect (see
+ * src/auth/github.ts) — same host as buildWsUrl, different scheme. */
+export function buildHttpUrl(host: string): string {
+  return `http://${host}`;
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
   hydrated: false,
   phoneId: "",
   backendHost: DEFAULT_BACKEND_HOST,
+  jwt: null,
   connectionStatus: "disconnected",
 
   devices: [],
@@ -135,9 +155,10 @@ export const useAppStore = create<AppState>()(
   lastError: null,
 
   hydrate: async () => {
-    let [phoneId, backendHost] = await Promise.all([
+    let [phoneId, backendHost, jwt] = await Promise.all([
       AsyncStorage.getItem(PHONE_ID_KEY),
       AsyncStorage.getItem(BACKEND_HOST_KEY),
+      SecureStore.getItemAsync(JWT_KEY),
     ]);
 
     if (!phoneId) {
@@ -162,15 +183,24 @@ export const useAppStore = create<AppState>()(
     set({
       phoneId,
       backendHost: backendHost || DEFAULT_BACKEND_HOST,
+      jwt,
       hydrated: true,
     });
   },
 
   connect: () => {
-    const { phoneId, backendHost } = get();
+    const { phoneId, backendHost, jwt } = get();
     client?.disconnect();
 
-    client = new PhoneSocketClient(buildWsUrl(backendHost), phoneId, {
+    if (!jwt) {
+      // Nothing to authenticate the socket with — the backend would just
+      // reject the register anyway (see backend/auth.py). Login flow is
+      // what calls connect() again once a token exists.
+      set({ connectionStatus: "disconnected" });
+      return;
+    }
+
+    client = new PhoneSocketClient(buildWsUrl(backendHost), phoneId, jwt, {
       onStatus: (status) => set({ connectionStatus: status }),
       onMessage: (message) => handleIncoming(message, set, get),
     });
@@ -181,6 +211,25 @@ export const useAppStore = create<AppState>()(
     await AsyncStorage.setItem(BACKEND_HOST_KEY, host);
     set({ backendHost: host, devices: [], projectsByDevice: {} });
     get().connect();
+  },
+
+  login: async (token: string) => {
+    await SecureStore.setItemAsync(JWT_KEY, token);
+    set({ jwt: token });
+    get().connect();
+  },
+
+  logout: async () => {
+    client?.disconnect();
+    await SecureStore.deleteItemAsync(JWT_KEY);
+    set({
+      jwt: null,
+      connectionStatus: "disconnected",
+      devices: [],
+      projectsByDevice: {},
+      selectedDeviceId: null,
+      selectedProjectId: null,
+    });
   },
 
   selectDevice: (deviceId: string) => {
@@ -431,6 +480,19 @@ function handleIncoming(
       // Top-level backend errors (bad_message/device_offline) — a revert's
       // own failure is a devagent-level "log" event instead, handled above.
       set({ lastError: message });
+
+      if (message.reason === "unauthorized") {
+        // Missing/invalid/expired token (see backend/auth.py) — the socket
+        // is about to be closed by the backend either way. Clear the token
+        // so connect()'s reconnect-with-backoff loop doesn't just keep
+        // resending the same now-known-bad one forever, and so _layout.tsx
+        // (watching `jwt`) routes back to the login screen.
+        client?.disconnect();
+        SecureStore.deleteItemAsync(JWT_KEY).catch(() => {});
+        set({ jwt: null });
+        return;
+      }
+
       const { lastStartedTaskId, revertStatusByTask } = get();
       if (lastStartedTaskId && revertStatusByTask[lastStartedTaskId] === "pending") {
         set((state) => ({
