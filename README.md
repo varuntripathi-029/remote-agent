@@ -12,8 +12,10 @@ phone  <--WebSocket-->  backend  <--WebSocket-->  devagent
 
 - **[`backend/`](backend/)** — a small FastAPI relay. Dumb, untrusted, and
   agent-agnostic: it never calls an LLM and never contains logic specific to
-  any one CLI agent. It only authenticates connections (TODO) and forwards
-  JSON messages between phones and laptops by `device_id`. **Implemented.**
+  any one CLI agent. Forwards JSON messages between phones and laptops by
+  `device_id`. `/ws/phone` requires GitHub OAuth + a JWT (see
+  `backend/auth.py`); `/ws/agent` doesn't yet (TODO(pairing) — Ed25519
+  device identity, next hardening phase). **Implemented.**
 - **[`devagent/`](devagent/)** — the process that runs on a laptop, dials out
   to the backend (reverse tunnel, no home ports opened), and drives whichever
   CLI agent is selected via an adapter pattern. Also owns git
