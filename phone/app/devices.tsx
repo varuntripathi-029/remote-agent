@@ -15,9 +15,14 @@ export default function DevicesScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => router.push("/settings")} hitSlop={12}>
-          <Text style={styles.headerLink}>Settings</Text>
-        </Pressable>
+        <View style={styles.headerRightRow}>
+          <Pressable onPress={() => router.push("/help")} hitSlop={12}>
+            <Text style={styles.headerLink}>Help</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={12}>
+            <Text style={styles.headerLink}>Settings</Text>
+          </Pressable>
+        </View>
       ),
     });
   }, [navigation]);
@@ -58,6 +63,7 @@ export default function DevicesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, padding: 16 },
+  headerRightRow: { flexDirection: "row", alignItems: "center", gap: 16, marginRight: 4 },
   headerLink: { color: colors.accent, fontSize: 15 },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
   dot: { width: 8, height: 8, borderRadius: 4 },
