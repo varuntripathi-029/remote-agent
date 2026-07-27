@@ -15,7 +15,16 @@ ENV/
 # Env files
 .env
 .env.*
+*.env
 !.env.example
+
+# Secrets — never committed, regardless of which part of the repo they'd
+# land in (backend's GitHub OAuth client secret + JWT_SECRET included)
+*.pem
+*.key
+*_secret*
+secrets.json
+credentials.json
 
 # devagent local config (machine-specific paths/device_id)
 devagent/projects.json
