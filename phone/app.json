@@ -29,7 +29,9 @@
         {
           "icon": "./assets/icon.png"
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
