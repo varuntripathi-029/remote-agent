@@ -5,12 +5,19 @@ Connects to the backend's /ws/phone, registers, lists a device's registered
 projects (projects.list/projects), sends one task.start by project_id,
 prints every streamed log and the final task.result, then offers to send a
 task.revert back to the checkpoint that task started from.
+
+/ws/phone requires a JWT now (see backend/auth.py) — set DEVAGENT_TEST_TOKEN
+to a real one (e.g. log in from the phone app once and copy it, or mint a
+throwaway one against your own running backend:
+`python -c "import sys; sys.path.insert(0,'../backend'); import auth;
+u = auth.users.get_or_create(1, 'test'); print(auth.issue_jwt(u))"`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 
 import websockets
@@ -19,10 +26,15 @@ BACKEND_PHONE_URL = "ws://localhost:8000/ws/phone"
 
 
 async def main() -> None:
+    token = os.environ.get("DEVAGENT_TEST_TOKEN")
+    if not token:
+        print("set DEVAGENT_TEST_TOKEN to a real JWT first — see this file's module docstring")
+        return
+
     device_id = input("device_id to target [laptop-1]: ").strip() or "laptop-1"
 
     async with websockets.connect(BACKEND_PHONE_URL) as ws:
-        await ws.send(json.dumps({"type": "register", "phone_id": "mock-phone"}))
+        await ws.send(json.dumps({"type": "register", "phone_id": "mock-phone", "token": token}))
         reply = json.loads(await ws.recv())
         print(f"[backend] {reply}")
         if device_id not in reply.get("online", []):
