@@ -11,16 +11,19 @@ directly and never sends a filesystem path — only `project_id` (per
 ```
 phone/
   app/                        expo-router screens (file-based routing)
-    _layout.tsx                 root Stack, hydrates store, connects socket
-    index.tsx                   login (STUB — see TODO(auth) below)
+    _layout.tsx                  root Stack, hydrates store, connects socket,
+                                  redirects to login on logout/token expiry
+    index.tsx                    GitHub OAuth login (see "Auth" below)
     devices.tsx                  online devices list
     device/[deviceId].tsx        agent + project pick, prompt, start task
     task/[taskId].tsx             live log stream, approval UI, result + revert
-    settings.tsx                  backend host config
+    settings.tsx                  backend host config + Log out
+    help.tsx                     in-app setup guide + FAQ
   src/
+    auth/github.ts              GitHub OAuth flow (expo-auth-session/expo-web-browser)
     types/protocol.ts           typed mirror of docs/PROTOCOL.md
     ws/client.ts                 WebSocket client (register + reconnect w/ backoff)
-    store/useAppStore.ts        zustand store — devices/projects/task state
+    store/useAppStore.ts        zustand store — devices/projects/task/auth state
     components/ErrorBanner.tsx  renders backend {"type":"error",...} messages
     util/formatLog.ts            renders a `log` message's opaque `data` field
     util/id.ts                    phone_id/task_id generation
@@ -53,6 +56,12 @@ has nothing listening on port 8000. You need:
    from the app's **Settings** screen — that overrides `.env` at runtime and
    is persisted on the phone, so you don't have to rebuild to change it).
 
+**No GitHub OAuth config belongs here.** This app never holds a GitHub
+client secret — anything in an `EXPO_PUBLIC_*` var or `app.json` ships
+inside the app bundle and is effectively public (extractable from the APK),
+which is exactly why the OAuth App's Client ID/Secret live in
+`backend/.env` instead, never here. See `backend/README.md`'s "Auth setup."
+
 ## Run it
 
 ```bash
@@ -67,8 +76,10 @@ If the QR/LAN connection doesn't work (e.g. router client isolation), run
 
 ## Walkthrough
 
-1. **Login** (`index.tsx`) — stub screen, no real auth yet (see TODO(auth)).
-   Tap **Continue**.
+1. **Login** (`index.tsx`) — tap **Sign in with GitHub**, complete the OAuth
+   flow in the in-app browser, land back here with a JWT stored (see "Auth"
+   below). Already logged in from a previous launch → skips straight past
+   this screen.
 2. **Devices** (`devices.tsx`) — shows every `device_id` the backend reports
    online (from its one-time `devices` reply at registration). Tap one.
 3. **New Task** (`device/[deviceId].tsx`) — on mount, sends
@@ -79,13 +90,14 @@ If the QR/LAN connection doesn't work (e.g. router client isolation), run
    here), pick a **project**, type a **prompt**, tap **Start Task**.
 4. **Task** (`task/[taskId].tsx`) — streams `log` messages into a
    terminal-style view live; if an `approval.request` arrives, an
-   Approve/Deny bar appears (M0's devagent auto-approves via
-   `--permission-mode acceptEdits`, so this won't fire yet — see the seam
-   note below); when `task.result` arrives, shows the changed-file list +
-   insertions/deletions and a **Revert** button that sends `task.revert`
-   with the checkpoint from that result.
+   Approve/Deny bar appears (works today for the `claude` agent's Bash
+   calls — see the Approval seam note below for the other two); when
+   `task.result` arrives, shows the changed-file list + insertions/deletions
+   and a **Revert** button that sends `task.revert` with the checkpoint
+   from that result.
 5. **Settings** (reachable from Login or the Devices header) — edit the
-   backend host at runtime; reconnects immediately on save.
+   backend host at runtime (reconnects immediately on save), or **Log out**
+   (clears the stored JWT, forces a fresh GitHub login).
 
 ## Verified
 
@@ -135,14 +147,31 @@ If the QR/LAN connection doesn't work (e.g. router client isolation), run
   watches for that specific log shape only while a revert is pending for
   that task, so an unrelated log line can't be misread as a revert result.
 
-### TODO(auth) — `app/index.tsx`
+### Auth — `src/auth/github.ts`, `app/index.tsx`, `src/store/useAppStore.ts`
 
-Per `aim.md` §2/§4, real identity is GitHub OAuth + a JWT on every
-phone→backend request, plus Ed25519 device keys and a pairing code for
-linking a new laptop — all a later hardening phase. Today, "Continue" just
-proceeds with a locally generated `phone_id` (`src/util/id.ts`), which is
-only a WebSocket routing handle, not a verified identity. This screen is the
-seam that phase replaces.
+Per `aim.md` §4: GitHub OAuth identifies the human, a JWT (issued by
+`backend/auth.py`) authenticates every `/ws/phone` request after that.
+`phone_id` (`src/util/id.ts`) is unrelated — still just a WebSocket routing
+handle, never an identity.
+
+- **The GitHub client secret never reaches this app.** `loginWithGithub()`
+  opens the backend's `/auth/github/login` in an in-app browser
+  (`expo-web-browser`'s `openAuthSessionAsync`); the backend does the whole
+  GitHub code exchange server-side and redirects back with only our own JWT.
+  Works in **Expo Go**, no native build: `expo-auth-session`'s
+  `makeRedirectUri()` produces an `exp://<metro-host>:8081/--/redirect` URI
+  there (a `devagentremote://` deep link — see `app.json`'s `scheme` — in a
+  native build instead), and that's what gets passed as `return_to`.
+- **The JWT lives in `expo-secure-store`, never AsyncStorage** (Keychain/
+  Keystore-backed — see `useAppStore.ts`'s `JWT_KEY`) and persists across
+  restarts, separately from the zustand `persist()` middleware that backs
+  chat history via AsyncStorage.
+- **On an `unauthorized` error** (expired/invalid token, or the backend
+  restarted with a different `JWT_SECRET`) the store clears the token and
+  `_layout.tsx` (watching it) routes back to login automatically, from
+  whatever screen the user was on.
+- **Ed25519 device keys + a pairing code** for linking a new laptop are the
+  next hardening phase (aim.md §4) — not built here.
 
 ### TODO(push) — `src/notifications.ts`
 
