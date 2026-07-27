@@ -55,6 +55,9 @@ export default function DeviceScreen() {
           <Pressable onPress={() => setDrawerOpen(true)} hitSlop={12}>
             <Text style={styles.hamburger}>☰</Text>
           </Pressable>
+          <Pressable onPress={() => router.push("/help")} hitSlop={12}>
+            <Text style={styles.helpIcon}>?</Text>
+          </Pressable>
         </View>
       ),
     });
@@ -182,6 +185,18 @@ const styles = StyleSheet.create({
   headerLeftRow: { flexDirection: "row", alignItems: "center", gap: 16, marginRight: 16 },
   backArrow: { color: colors.text, fontSize: 28, marginTop: -2 },
   hamburger: { color: colors.text, fontSize: 22 },
+  helpIcon: {
+    color: colors.muted,
+    fontSize: 15,
+    fontWeight: "700",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    textAlign: "center",
+    lineHeight: 19,
+  },
   chipRow: { flexDirection: "row", gap: 8 },
   chip: {
     borderWidth: 1,
