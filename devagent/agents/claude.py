@@ -88,7 +88,12 @@ class ClaudeCodeAgent(BaseAgent):
 
         etype = event.get("type")
 
-        if etype == "system" and event.get("subtype") == "init":
+        if etype == "system":
+            if event.get("subtype") != "init":
+                # Internal telemetry (e.g. subtype "thinking_tokens") — not
+                # useful to show and, unlike "init", carries no session_id
+                # worth surfacing either.
+                return None
             tools = event.get("tools") or []
             return {
                 "kind": "session_init",
@@ -97,10 +102,16 @@ class ClaudeCodeAgent(BaseAgent):
             }
 
         if etype in ("assistant", "user"):
-            parsed = self._parse_message_blocks(event.get("message") or {})
-            if parsed:
-                return parsed
-            return {"kind": "raw", "text": line}
+            message = event.get("message")
+            if not isinstance(message, dict):
+                # message itself isn't the shape we expect — genuinely
+                # unparseable, so show it raw rather than silently dropping.
+                return {"kind": "raw", "text": line}
+            # An empty list here means every block was recognized and
+            # intentionally not surfaced (e.g. a thinking-only turn) — that's
+            # "nothing to show", not "failed to parse", so swallow it rather
+            # than falling back to a raw JSON dump.
+            return self._parse_message_blocks(message) or None
 
         if etype == "result":
             return {
