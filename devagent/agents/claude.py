@@ -88,6 +88,10 @@ class ClaudeCodeAgent(BaseAgent):
 
         etype = event.get("type")
 
+        if etype == "rate_limit_event":
+            # Quota/rate-limit telemetry — not actionable, nothing to show.
+            return None
+
         if etype == "system":
             if event.get("subtype") != "init":
                 # Internal telemetry (e.g. subtype "thinking_tokens") — not
